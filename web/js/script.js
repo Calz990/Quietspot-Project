@@ -2,9 +2,11 @@
    Sections: helpers, model, data, ui, spot-list, dashboard, spot-detail, events,
    palette, feed, feed-extras, reco, auth, main */
 
-/* =====================================================
-   helpers.js: Small helper functions used everywhere (DOM lookup, escaping text, time formatting).
-   ===================================================== */
+/*
+=====================================================
+helpers.js: Small helper functions used everywhere (DOM lookup, escaping text, time formatting).
+=====================================================
+*/
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -24,9 +26,11 @@ const ago = ts => {
 const busyCurve = (peak, w, base = 8) => Array.from({ length: 13 }, (_, i) => Math.min(100, Math.round(base + 85 * Math.exp(-((8 + i - peak) ** 2) / (2 * w * w)))));
 const walk = m => Math.max(1, Math.ceil(m / 80)) + ' min';
 
-/* =====================================================
-   model.js: OOP model: Spot classes (Cafe, Library, StudyRoom...) and User.
-   ===================================================== */
+/* 
+=====================================================
+model.js: OOP model: Spot classes (Cafe, Library, StudyRoom...) and User.
+=====================================================
+*/
 
 class Facility {
     constructor({ wifi = false, mbps = 0, outlets = false, aircon = false, food = false } = {}) { Object.assign(this, { wifi, mbps, outlets, aircon, food }); }
