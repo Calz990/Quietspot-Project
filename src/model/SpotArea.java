@@ -11,8 +11,8 @@ public abstract class SpotArea {
     private double y;
     private int[] hours;
     private double price;
-    private int noise; // 1: Quiet, 2: Moderate, 3: Loud
-    private int crowd; // 1: Low, 2: Medium, 3: High
+    private NoiseLevel noise;
+    private CrowdLevel crowd;
     private String rules;
     private String description;
     private Facility facility;
@@ -21,7 +21,7 @@ public abstract class SpotArea {
     private List<ReportStatus> reports;
 
     public SpotArea(int id, String name, String address, double x, double y, int[] hours,
-            double price, int noise, int crowd,
+            double price, NoiseLevel noise, CrowdLevel crowd,
             Facility facility, String description, String rules) {
         this.id = id;
         this.name = name;
@@ -46,12 +46,13 @@ public abstract class SpotArea {
 
     public abstract String extraInfo();
 
-    public void updateStatus(int noise, int crowd) {
+    public void updateStatus(NoiseLevel noise, CrowdLevel crowd) {
         this.noise = noise;
         this.crowd = crowd;
         this.updatedAt = System.currentTimeMillis();
     }
 
+    // Getters & Setters
     public int getId() {
         return id;
     }
@@ -60,8 +61,16 @@ public abstract class SpotArea {
         return name;
     }
 
+    public void setName(String name) {
+        this.name = name;
+    }
+
     public String getAddress() {
         return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
     }
 
     public double getX() {
@@ -76,28 +85,56 @@ public abstract class SpotArea {
         return hours;
     }
 
+    public void setHours(int[] hours) {
+        this.hours = hours;
+    }
+
     public double getPrice() {
         return price;
     }
 
-    public int getNoise() {
+    public void setPrice(double price) {
+        this.price = price;
+    }
+
+    public NoiseLevel getNoise() {
         return noise;
     }
 
-    public int getCrowd() {
+    public void setNoise(NoiseLevel noise) {
+        this.noise = noise;
+    }
+
+    public CrowdLevel getCrowd() {
         return crowd;
+    }
+
+    public void setCrowd(CrowdLevel crowd) {
+        this.crowd = crowd;
     }
 
     public String getRules() {
         return rules;
     }
 
+    public void setRules(String rules) {
+        this.rules = rules;
+    }
+
     public String getDescription() {
         return description;
     }
 
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
     public Facility getFacility() {
         return facility;
+    }
+
+    public void setFacility(Facility facility) {
+        this.facility = facility;
     }
 
     public long getUpdatedAt() {

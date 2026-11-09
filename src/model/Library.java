@@ -2,7 +2,7 @@ package model;
 
 public class Library extends SpotArea {
     public Library(int id, String name, String address, double x, double y, int[] hours,
-            double price, int noise, int crowd,
+            double price, NoiseLevel noise, CrowdLevel crowd,
             Facility facility, String description, String rules) {
         super(id, name, address, x, y, hours, price, noise, crowd, facility, description, rules);
     }

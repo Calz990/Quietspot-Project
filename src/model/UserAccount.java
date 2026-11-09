@@ -12,6 +12,12 @@ public class UserAccount {
     private int spotsAdded;
     private int photosAdded;
 
+    // Constructor Overloading: Default User
+    public UserAccount(String userName) {
+        this(userName, "Student");
+    }
+
+    // Parameterized Constructor
     public UserAccount(String userName, String userType) {
         this.userName = userName;
         this.userType = userType;
@@ -39,8 +45,16 @@ public class UserAccount {
         return userName;
     }
 
+    public void setUserName(String userName) {
+        this.userName = userName;
+    }
+
     public String getUserType() {
         return userType;
+    }
+
+    public void setUserType(String userType) {
+        this.userType = userType;
     }
 
     public int getPoints() {
@@ -63,12 +77,12 @@ public class UserAccount {
         return spotsAdded;
     }
 
-    public int getPhotosAdded() {
-        return photosAdded;
-    }
-
     public void incrementSpotsAdded() {
         this.spotsAdded++;
+    }
+
+    public int getPhotosAdded() {
+        return photosAdded;
     }
 
     public void incrementPhotosAdded() {
