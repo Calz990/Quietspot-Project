@@ -2,13 +2,13 @@
    Sections: helpers, model, data, ui, spot-list, dashboard, spot-detail, events,
    palette, feed, feed-extras, reco, auth, main */
 
-/*
-=====================================================
-helpers.js: Small helper functions used everywhere (DOM lookup, escaping text, time formatting).
-=====================================================
-*/
+/* =====================================================
+   helpers.js: Small helper functions used everywhere (DOM lookup, escaping text, time formatting).
+   ===================================================== */
 
 const $ = id => document.getElementById(id);
+const CURRENT = document.body.dataset.page || 'home';   // which page file is open (set on <body data-page="...">)
+const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };   // add a listener only if the element exists on this page
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const NOISE = ['', 'Quiet', 'Moderate', 'Loud'];
 const CROWD = ['', 'Low', 'Medium', 'High'];
@@ -26,11 +26,9 @@ const ago = ts => {
 const busyCurve = (peak, w, base = 8) => Array.from({ length: 13 }, (_, i) => Math.min(100, Math.round(base + 85 * Math.exp(-((8 + i - peak) ** 2) / (2 * w * w)))));
 const walk = m => Math.max(1, Math.ceil(m / 80)) + ' min';
 
-/* 
-=====================================================
-model.js: OOP model: Spot classes (Cafe, Library, StudyRoom...) and User.
-=====================================================
-*/
+/* =====================================================
+   model.js: OOP model: Spot classes (Cafe, Library, StudyRoom...) and User.
+   ===================================================== */
 
 class Facility {
     constructor({ wifi = false, mbps = 0, outlets = false, aircon = false, food = false } = {}) { Object.assign(this, { wifi, mbps, outlets, aircon, food }); }
@@ -215,6 +213,7 @@ function award(n, why) {
     toast(`+${n} points: ${why}` + (after > before ? '. New badge unlocked!' : ''));
     renderChip();
     renderDash();
+    save();
 }
 function meter(lv, label, big) {
     let b = '';
@@ -230,21 +229,24 @@ function seatPill(s) {
     return `<span class="seat">${s.seats} open</span>`;
 }
 function renderChip() { $('whoChip').textContent = `${user.userName}, ${user.points} pts`; }
-function go(page) {
+/* Which file each page name opens. Navigation now opens another HTML file. */
+const PAGE_FILES = {
+    home: 'index.html', feed: 'feed.html', reco: 'reco.html', spots: 'spots.html',
+    dash: 'dashboard.html', about: 'about.html', login: 'login.html', signup: 'signup.html'
+};
+function go(page, msg) {
     if (!PUBLIC_PAGES.includes(page) && !loggedIn) {
         nextPage = page;
         page = 'login';
-        toast('Please log in to continue.');
+        msg = msg || 'Please log in to continue.';
     }
-    ['home', 'feed', 'reco', 'login', 'signup', 'spots', 'dash', 'about'].forEach(p => $('p-' + p).hidden = p !== page);
-    document.querySelectorAll('nav.main .pill').forEach(b => b.setAttribute('aria-current', b.dataset.page === page ? 'page' : 'false'));
-    if (page === 'feed')
-        renderFeed();
-    if (page === 'reco')
-        renderReco();
-    if (page === 'dash')
-        renderDash();
-    window.scrollTo(0, 0);
+    save();
+    try {
+        sessionStorage.setItem('qs-next', nextPage);
+        if (msg) sessionStorage.setItem('qs-flash', msg);   // shown as a toast on the next page
+    }
+    catch (e) { }
+    if (PAGE_FILES[page]) location.href = PAGE_FILES[page];
 }
 
 /* =====================================================
@@ -282,6 +284,7 @@ function readFilters() {
     renderMap();
 }
 function clearFilters() {
+    if (!$('q')) return;
     $('q').value = '';
     ['fNoise', 'fCrowd', 'fPrice'].forEach(i => $(i).value = 'any');
     $('fSort').value = 'near';
@@ -289,10 +292,12 @@ function clearFilters() {
     readFilters();
 }
 function renderHome() {
+    if (!$('waiting')) return;
     const n = spots.filter(s => s.checkAvailability()).length;
     $('waiting').innerHTML = `<b>${n}</b> ${n === 1 ? 'spot has' : 'spots have'} open seats right now`;
 }
 function renderRows() {
+    if (!$('rows')) return;
     const list = filtered();
     $('rows').innerHTML = list.length ? list.map(s => {
         const d = s.distance(state.pos), fav = user.favoriteSpots.has(s.id);
@@ -310,6 +315,7 @@ function renderRows() {
     }).join('') : `<tr><td colspan="8" class="empty">No spots match these filters. <button class="btn sm" data-act="clear">Clear filters</button></td></tr>`;
 }
 function renderMap() {
+    if (!$('map')) return;
     const match = new Set(filtered().map(s => s.id));
     let g = `<rect x="6" y="8" width="38" height="26" rx="3" fill="none" stroke="var(--ink)" stroke-width=".5" stroke-dasharray="2 1.5"/><text x="9" y="14" font-size="2.8" fill="var(--muted)">Campus (sample)</text>`;
     g += `<path d="M0 44 L100 40 M30 0 L34 70 M68 0 L72 70" stroke="var(--line)" stroke-width="2.4" fill="none"/>`;
@@ -448,7 +454,7 @@ function renderRewards() {
       </div>
     </div>`;
 }
-function renderDash() { renderStats(); renderProfilePanel(); renderVerify(); renderRewards(); }
+function renderDash() { if (!$('stats')) return; renderStats(); renderProfilePanel(); renderVerify(); renderRewards(); }
 
 /* =====================================================
    spot-detail.js: Spot detail popup, status reports, votes, and the Add spot form.
@@ -563,8 +569,7 @@ function openPhoto(photoId) {
     $('dlgPhoto').showModal();
 }
 function openSpot(id) { if (!requireLogin('Please log in to continue.')) return; state.sel = id; renderTop(); renderPhotos(); renderReports(); renderMap(); $('dlgSpot').showModal(); }
-function refreshAll() { if (!$('p-feed').hidden)
-    renderFeed(); renderHome(); renderRows(); renderMap(); renderDash(); renderChip(); if ($('dlgSpot').open) {
+function refreshAll() { renderFeed(); renderHome(); renderRows(); renderMap(); renderDash(); renderChip(); save(); if ($('dlgSpot') && $('dlgSpot').open) {
     renderTop();
     renderPhotos(true);
     renderReports();
@@ -585,7 +590,7 @@ function openReport(id) {
     <div class="foot"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn solid">Send update (+10 points)</button></div>`;
     $('dlgReport').showModal();
 }
-$('reportForm').addEventListener('submit', e => {
+on('reportForm', 'submit', e => {
     e.preventDefault();
     const s = byId(state.sel), err = $('repErr');
     try {
@@ -642,6 +647,7 @@ function vote(id, dir) {
     refreshAll();
 }
 function fillHours() {
+    if (!$('a-open')) return;
     let o = '', c = '';
     for (let h = 5; h <= 23; h++)
         o += `<option value="${h}" ${h === 8 ? 'selected' : ''}>${fmtHour(h)}</option>`;
@@ -650,7 +656,7 @@ function fillHours() {
     $('a-open').innerHTML = o;
     $('a-close').innerHTML = c;
 }
-$('addForm').addEventListener('submit', e => {
+on('addForm', 'submit', e => {
     e.preventDefault();
     const err = $('addErr');
     try {
@@ -685,7 +691,6 @@ $('addForm').addEventListener('submit', e => {
         $('addForm').reset();
         fillHours();
         $('dlgAdd').close();
-        go('spots');
         clearFilters();
         state.sel = spot.id;
         refreshAll();
@@ -716,13 +721,18 @@ document.addEventListener('click', e => {
     }
     if (act === 'go-report') {
         if (requireLogin('Please log in first to report a status.', 'spots')) {
-            go('spots');
-            toast('Choose a spot, then tap Report.');
+            go('spots', 'Choose a spot, then tap Report.');
         }
     }
     if (act === 'go-add') {
-        $('addErr').textContent = '';
-        $('dlgAdd').showModal();
+        if ($('dlgAdd')) {
+            $('addErr').textContent = '';
+            $('dlgAdd').showModal();
+        }
+        else {   // this page has no Add dialog (e.g. Home), so open the Spots page and show it there
+            try { sessionStorage.setItem('qs-add', '1'); } catch (x) { }
+            go('spots');
+        }
     }
     if (act === 'view')
         openSpot(id);
@@ -753,7 +763,7 @@ document.addEventListener('keydown', e => {
         openSpot(+e.target.dataset.id);
     }
 });
-$('map').addEventListener('click', e => {
+if ($('map')) $('map').addEventListener('click', e => {
     if (e.target.closest('.pin'))
         return;
     const svg = $('map'), pt = svg.createSVGPoint();
@@ -766,7 +776,7 @@ $('map').addEventListener('click', e => {
 });
 [
     'q', 'fNoise', 'fCrowd', 'fPrice', 'fSort', 'cWifi', 'cOutlets', 'cSeats', 'cOpen', 'cSaved'
-].forEach(i => $(i).addEventListener(i === 'q' ? 'input' : 'change', readFilters));
+].forEach(i => on(i, i === 'q' ? 'input' : 'change', readFilters));
 document.addEventListener('change', e => {
     const id = e.target.id;
     if (id === 'ph-file' && e.target.files[0])
@@ -851,6 +861,7 @@ function spotArt(s) {
     return 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400">${g}</svg>`);
 }
 function renderFeed() {
+    if (!$('feed')) return;
     const q = $('fq').value.trim().toLowerCase(), so = $('fsort').value, quiet = $('fquiet').checked, rt = x => soc(x).sum / soc(x).count;
     const list = spots.filter(s => (!q || (s.name + ' ' + s.kind).toLowerCase().includes(q)) && (!quiet || s.noise === 1));
     list.sort(so === 'rated' ? (a, b) => rt(b) - rt(a) : so === 'seats' ? (a, b) => b.seats - a.seats : (a, b) => a.distance(state.pos) - b.distance(state.pos));
@@ -960,7 +971,7 @@ document.addEventListener('click', e => {
         toast('Comment deleted');
     }
 });
-['fq', 'fsort', 'fquiet'].forEach(i => $(i).addEventListener(i === 'fq' ? 'input' : 'change', renderFeed));
+['fq', 'fsort', 'fquiet'].forEach(i => on(i, i === 'fq' ? 'input' : 'change', renderFeed));
 
 /* =====================================================
    reco.js: Reco page: ranks spots by what the student needs.
@@ -969,9 +980,10 @@ document.addEventListener('click', e => {
 const RC = [
     ['quiet', 'Quiet', 1], ['outlets', 'Power outlets', 1], ['wifi', 'Wi-Fi'], ['aircon', 'Air-conditioning'], ['cheap', 'Free or cheap'], ['open', 'Open now'], ['seats', 'Has open seats']
 ];
-$('recoChecks').innerHTML = RC.map(r => `<label><input type="checkbox" value="${r[0]}" ${r[2] ? 'checked' : ''}> ${r[1]}</label>`).join('');
-$('recoChecks').addEventListener('change', renderReco);
+if ($('recoChecks')) $('recoChecks').innerHTML = RC.map(r => `<label><input type="checkbox" value="${r[0]}" ${r[2] ? 'checked' : ''}> ${r[1]}</label>`).join('');
+on('recoChecks', 'change', renderReco);
 function renderReco() {
+    if (!$('recoOut')) return;
     const pick = [...document.querySelectorAll('#recoChecks input:checked')].map(x => x.value);
     const T = {
         quiet: s => s.noise === 1, outlets: s => s.facility.outlets, wifi: s => s.facility.wifi, aircon: s => s.facility.aircon, cheap: s => s.price <= 50, open: s => s.isOpen, seats: s => s.checkAvailability()
@@ -1000,8 +1012,7 @@ function requireLogin(message, backTo) {
     const open = [...document.querySelectorAll('.page')].find(p => !p.hidden);
     nextPage = backTo || (open && !/login|signup/.test(open.id) ? open.id.slice(2) : 'home');
     document.querySelectorAll('dialog[open]').forEach(d => d.close());
-    go('login');
-    toast(message);
+    go('login', message);
     return false;
 }
 function authDone(name) {
@@ -1011,9 +1022,9 @@ function authDone(name) {
     b.textContent = 'Logout';
     b.dataset.act = 'logout';
     refreshAll();
-    go(nextPage);
+    const dest = nextPage;
     nextPage = 'home';
-    toast(`Welcome, ${name}!`);
+    go(dest, `Welcome, ${name}!`);
 }
 document.addEventListener('click', e => {
     if (!e.target.closest('[data-act="logout"]')) return;
@@ -1024,10 +1035,9 @@ document.addEventListener('click', e => {
     b.dataset.act = 'go';
     b.dataset.page = 'login';
     refreshAll();
-    go('home');
-    toast('Logged out.');
+    go('home', 'Logged out.');
 });
-$('loginForm').addEventListener('submit', e => {
+on('loginForm', 'submit', e => {
     e.preventDefault();
     const u = $('l-user').value.trim();
     if (!u || $('l-pass').value.length < 6) {
@@ -1037,7 +1047,7 @@ $('loginForm').addEventListener('submit', e => {
     $('lErr').textContent = '';
     authDone(u);
 });
-$('signupForm').addEventListener('submit', e => {
+on('signupForm', 'submit', e => {
     e.preventDefault();
     const n = $('s-name').value.trim(), u = $('s-user').value.trim();
     if (!n || !u) {
@@ -1060,5 +1070,89 @@ $('signupForm').addEventListener('submit', e => {
    main.js: Start-up: runs when the page loads.
    ===================================================== */
 
+/* ---- Saved state: keeps login, points, spots, reports, photos, ratings between pages ---- */
+const STORE = 'qs-data-v1';
+function save() {
+    const data = {
+        loggedIn, pos: state.pos, rid, pid, social,
+        user: {
+            userName: user.userName, userType: user.userType, points: user.points, fav: [...user.favoriteSpots],
+            reportsMade: user.reportsMade, spotsAdded: user.spotsAdded, photosAdded: user.photosAdded
+        },
+        spots: spots.map(s => ({
+            id: s.id, type: s.constructor.name, isNew: s.isNew, name: s.name, address: s.address, x: s.x, y: s.y, hours: s.hours,
+            price: s.price, capacity: s.capacity, rules: s.rules, description: s.description, fac: { ...s.facility },
+            seats: s.seats, noise: s.noise, crowd: s.crowd, busy: s.busy, updatedAt: s.updatedAt, reports: s.reports, photos: s.photos
+        }))
+    };
+    try {
+        localStorage.setItem(STORE, JSON.stringify(data));
+    }
+    catch (e) {
+        try {   // probably too many photos for the browser's storage limit: save everything except photos
+            data.spots.forEach(x => x.photos = []);
+            localStorage.setItem(STORE, JSON.stringify(data));
+        }
+        catch (e2) { }
+    }
+}
+function loadState() {
+    try { nextPage = sessionStorage.getItem('qs-next') || 'home'; } catch (e) { }
+    let d = null;
+    try { d = JSON.parse(localStorage.getItem(STORE)); } catch (e) { }
+    if (!d) return;
+    try {
+        loggedIn = !!d.loggedIn;
+        if (d.pos) state.pos = d.pos;
+        rid = Math.max(rid, d.rid || 1);
+        pid = Math.max(pid, d.pid || 1);
+        Object.assign(social, d.social || {});
+        const u = d.user || {};
+        user = new User(u.userName || 'Guest', u.userType || 'Student');
+        Object.assign(user, { points: u.points ?? 20, reportsMade: u.reportsMade || 0, spotsAdded: u.spotsAdded || 0, photosAdded: u.photosAdded || 0 });
+        user.favoriteSpots = new Set(u.fav || []);
+        (d.spots || []).forEach(o => {
+            let s = byId(o.id);
+            if (!s) {   // a spot the user added earlier
+                s = new (TYPES[o.type] || StudySpot)({ ...o, fac: o.fac });
+                spots.push(s);
+            }
+            s.seats = o.seats;
+            Object.assign(s, { noise: o.noise, crowd: o.crowd, updatedAt: o.updatedAt, busy: o.busy || s.busy });
+            s.reports = (o.reports || []).map(r => new Report(r));
+            s.photos = (o.photos || []).map(p => new Photo(p));
+        });
+    }
+    catch (e) { console.warn('Could not restore saved data', e); }
+}
+window.addEventListener('pagehide', save);
+
+/* =====================================================
+   main.js: Start-up: runs when each page loads.
+   ===================================================== */
+
+loadState();
 fillHours();
-refreshAll();
+document.querySelectorAll('nav.main .pill').forEach(b => b.setAttribute('aria-current', b.dataset.page === CURRENT ? 'page' : 'false'));
+if (loggedIn) {
+    const b = $('authBtn');
+    b.textContent = 'Logout';
+    b.dataset.act = 'logout';
+}
+if (!PUBLIC_PAGES.includes(CURRENT) && !loggedIn) {
+    go(CURRENT);   // protected page opened while logged out: send to login
+}
+else {
+    refreshAll();
+    if (CURRENT === 'reco') renderReco();
+    let flash = null, wantAdd = false;
+    try {
+        flash = sessionStorage.getItem('qs-flash');
+        wantAdd = sessionStorage.getItem('qs-add');
+        sessionStorage.removeItem('qs-flash');
+        sessionStorage.removeItem('qs-add');
+    }
+    catch (e) { }
+    if (flash) toast(flash);
+    if (wantAdd && $('dlgAdd') && loggedIn) { $('addErr').textContent = ''; $('dlgAdd').showModal(); }
+}
