@@ -2,6 +2,7 @@ package model;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Collections;
 
 public abstract class SpotArea {
     private int id;
@@ -49,43 +50,117 @@ public abstract class SpotArea {
         this.crowd = crowd;
         this.updatedAt = System.currentTimeMillis();
     }
+    public void addReport(ReportStatus r) {
+        this.reports.add(r);
+        updateStatus(r.getNoise(), r.getCrowd());
+    }
 
     // Getters & Setters
-    public int getId() { return id; }
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public int getId() {
+        return id;
+    }
 
-    public String getAddress() { return address; }
-    public void setAddress(String address) { this.address = address; }
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("Name cannot be null or empty");
+        }
+        this.name = name;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
+    }
 
     public double getX() { return x; }
+
     public double getY() { return y; }
 
-    public int[] getHours() { return hours; }
-    public void setHours(int[] hours) { this.hours = hours; }
+    public int[] getHours() {
+        return hours;
+    }
 
-    public double getPrice() { return price; }
-    public void setPrice(double price) { this.price = price; }
+    public void setHours(int[] hours) {
+        this.hours = hours;
+    }
 
-    public NoiseLevel getNoise() { return noise; }
-    public void setNoise(NoiseLevel noise) { this.noise = noise; }
+    public double getPrice() {
+        return price;
+    }
 
-    public CrowdLevel getCrowd() { return crowd; }
-    public void setCrowd(CrowdLevel crowd) { this.crowd = crowd; }
+    public void setPrice(double price) {
+        if (price < 0) {
+            throw new IllegalArgumentException("Price cannot be negative");
+        }
+        setPrice(price);
+    }
 
-    public String getRules() { return rules; }
-    public void setRules(String rules) { this.rules = rules; }
+    public NoiseLevel getNoise() {
+        return noise;
+    }
 
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
+    public void setNoise(NoiseLevel noise) {
+        if (noise == null) {
+            throw new IllegalArgumentException("Noise level cannot be null");
+        }
+        this.noise = noise;
+    }
 
-    public Facility getFacility() { return facility; }
-    public void setFacility(Facility facility) { this.facility = facility; }
+    public CrowdLevel getCrowd() {
+        return crowd;
+    }
 
-    public long getUpdatedAt() { return updatedAt; }
+    public void setCrowd(CrowdLevel crowd) {
+        if (crowd == null) {
+            throw new IllegalArgumentException("Crowd level cannot be null");
+        }
+        this.crowd = crowd;
+    }
 
-    public boolean isNew() { return isNew; }
-    public void setNew(boolean isNew) { this.isNew = isNew; }
+    public String getRules() {
+        return rules;
+    }
 
-    public List<ReportStatus> getReports() { return reports; }
+    public void setRules(String rules) {
+        this.rules = rules;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public Facility getFacility() {
+        return facility;
+    }
+
+    public void setFacility(Facility facility) {
+        this.facility = facility;
+    }
+
+    public long getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public boolean isNew() {
+        return isNew;
+    }
+
+    public void setNew(boolean isNew) {
+        this.isNew = isNew;
+    }
+
+    public List<ReportStatus> getReports() {
+        return Collections.unmodifiableList(reports); 
+    }
 }

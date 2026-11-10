@@ -2,7 +2,7 @@ import model.*;
 import java.util.ArrayList;
 import java.util.List;
 
-public class QuietSpotApp {
+public class Main {
     public static void main(String[] args) {
         List<SpotArea> spots = new ArrayList<>();
 
