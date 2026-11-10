@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>QuietSpot – About</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Sora:wght@600;700&display=swap" rel="stylesheet">
+  <script>
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('qs-theme'); } catch (e) {}
+    if (t !== 'light' && t !== 'dark') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+  </script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="about">
+
+<!-- ===== TOP BAR / NAVIGATION ===== -->
+<header class="bar">
+  <div class="in">
+    <div class="logo"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>QuietSpot</div>
+    <nav class="main" aria-label="Main menu">
+      <button class="pill" data-act="go" data-page="home">Home</button>
+      <button class="pill" data-act="go" data-page="feed">Feed</button>
+      <button class="pill" data-act="go" data-page="reco">Reco</button>
+      <button class="pill" data-act="go" data-page="spots">Spots</button>
+      <button class="pill" data-act="go" data-page="dash">Dashboard</button>
+    </nav>
+    <span class="chip" id="whoChip"></span>
+    <button class="btn sm" id="authBtn" data-act="go" data-page="login">Login</button>
+    <select class="palette" id="palette" aria-label="Color palette">
+      <option value="bw">Black &amp; White</option>
+      <option value="teal">Teal &amp; Navy</option>
+      <option value="blue">Blue &amp; Cream</option>
+      <option value="sage">Sage &amp; Brown</option>
+      <option value="sunset">Sunset Orange</option>
+      <option value="violet">Violet &amp; Pink</option>
+      <option value="ocean">Ocean Blue</option>
+      <option value="rose">Rose &amp; Teal</option>
+    </select>
+    <button class="theme" id="themeBtn" role="switch" aria-checked="false" aria-label="Dark mode">
+      <span class="track"><span class="knob">
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg class="moon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </span></span>
+      <span id="themeLabel">Light</span>
+    </button>
+    <button class="iconbtn" data-act="go" data-page="about" aria-label="About this system">i</button>
+  </div>
+</header>
+
+<!-- ===== ABOUT PAGE ===== -->
+<section class="page" id="p-about">
+  <div class="wrap">
+    <div class="about-hero"><span class="tagline">QuietSpot</span><h2>About us</h2></div>
+    <div class="bio">
+      <div>
+        <div style="font-weight:700">Our purpose</div>
+        <h3>Helping students find a place to focus</h3>
+        <p>QuietSpot helps students find a suitable place to study based on their needs. It shows nearby study spots with their location, crowd level, noise level, open seats, facilities, and price, and lets students share what a spot is like right now so others can decide where to go.</p>
+      </div>
+      <div class="card team">
+        <h3>Team 6: Java thRICE (IT-2105)</h3>
+        <div class="li"><div><b>Charisse T. Bagsit</b><small>Coordination, documentation, testing</small></div></div>
+        <div class="li"><div><b>Princess Khaila L. Robines</b><small>Requirements, class design, UML</small></div></div>
+        <div class="li"><div><b>Joshua R. Servando</b><small>Java classes, OOP features, validation</small></div></div>
+      </div>
+    </div>
+    <h3 style="font-size:1.6rem">Our core features</h3>
+    <div class="features">
+      <div class="card feat"><i>1</i><h3>Search and filter</h3><p>Filter by noise level, crowd level, facilities, and price, and sort by distance.</p></div>
+      <div class="card feat"><i>2</i><h3>Live spot status</h3><p>See estimated open seats, crowd, and noise, plus the usual busy hours of each spot.</p></div>
+      <div class="card feat"><i>3</i><h3>Community updates</h3><p>Students report conditions, add new spots, and upvote or downvote reports to keep them accurate.</p></div>
+      <div class="card feat"><i>4</i><h3>Favorites and rewards</h3><p>Save favorite spots, get directions, and earn points and badges for helpful updates.</p></div>
+    </div>
+    <div class="card panel">
+      <h3>Project limitations</h3>
+      <ul class="lim">
+        <li>Only spots in Alangilan, Batangas City that are added or registered in the system are covered.</li>
+        <li>Seats, crowd, and noise depend on user updates and may not always be accurate.</li>
+        <li>No sensors or cameras, no real Wi-Fi speed testing, no payments or booking.</li>
+        <li>Rewards are basic points and badges only.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== TOAST (small message popup) ===== -->
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="js/script.js"></script>
+</body>
+</html>
