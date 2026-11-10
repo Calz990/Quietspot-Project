@@ -2,8 +2,10 @@
 
 import model.*;
 import service.AuthService;
+import service.ReportService;
 import service.SpotRepository;
 import java.util.List;
+import service.ReportService;
 
 import exception.InvalidInputException;
 
@@ -24,13 +26,21 @@ public class Main {
         }
 
         AuthService auth = new AuthService();
+        ReportService reports = new ReportService(repo);
         try {
             auth.register("Charisse", "secret123", UserType.STUDENT);
             UserAccount me = auth.login("charisse", "secret123");
             System.out.println("\nLogged in: " + me.getUserName() + " (" + me.getPoints() + " points)");
+
+            SpotArea cafe = repo.findById(2);
+            System.out.println("\nBefore: " + cafe.getName() + " is " + cafe.getNoise() + " / " + cafe.getCrowd());
+            reports.submitReport(me, 2, NoiseLevel.QUIET, CrowdLevel.LOW, "Almost empty right now");
+            System.out.println("After:  " + cafe.getName() + " is " + cafe.getNoise() + " / " + cafe.getCrowd());
+            System.out.println("Points: " + me.getPoints() + ", reports made: " + me.getReportsMade());
+
             auth.login("charisse", "wrongpass"); // This should throw an exception
         } catch (InvalidInputException e) {
-            System.out.println("Login failed: " + e.getMessage());
+            System.out.println("\nLogin failed: " + e.getMessage());
         }
     }
 }
