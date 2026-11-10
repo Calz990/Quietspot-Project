@@ -30,7 +30,7 @@ public abstract class SpotArea {
         this.x = x;
         this.y = y;
         this.hours = hours;
-        this.price = price;
+        setPrice(price);
         this.noise = noise;
         this.crowd = crowd;
         this.facility = facility;
