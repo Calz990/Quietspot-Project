@@ -99,7 +99,7 @@ public abstract class SpotArea {
         if (price < 0) {
             throw new IllegalArgumentException("Price cannot be negative");
         }
-        setPrice(price);
+        this.price = price;
     }
 
     public NoiseLevel getNoise() {
