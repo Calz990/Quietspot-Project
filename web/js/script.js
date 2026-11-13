@@ -178,6 +178,15 @@ let rid = 1, pid = 1;
     [4, 'Paolo', 1, 1, 35, 'Quiet, tables at the back are free.', 5, 2, 0], [4, 'Mika', 1, 2, 25, 'Getting busier near exam week.', 60, 3, 0],
     [5, 'Ria', 1, 1, 22, 'Calm and almost empty.', 40, 1, 0]
 ].forEach(([spotId, user, noise, crowd, seats, note, m, up, down]) => byId(spotId).reports.push(new Report({ id: rid++, spotId, user, noise, crowd, seats, note, ts: mins(m), up, down })));
+/* Photos shown on each spot. Put the image files in the "images" folder, next to the "js" and "css" folders.
+   Format: [spot id, image file, caption, minutes ago]. Add more lines to show more photos for a spot (up to 12). */
+[
+    [1, 'images/libroespresso.jpg', 'Libro Espresso', 600],
+    [2, 'images/butfirstcoffee.jpg', 'But First, Coffee', 600],
+    [3, 'images/bsustudentarea.jpg', 'BSU Student Area', 600],
+    [4, 'images/bsulibrary.jpg', 'BSU Library', 600],
+    [5, 'images/batangascitylibrary.jpg', 'Batangas City Public Library and Information Center', 600]
+].forEach(([spotId, src, caption, m]) => byId(spotId).photos.push(new Photo({ id: pid++, user: 'QuietSpot', src, caption, ts: mins(m) })));
 let user = new User('Guest', 'Student');
 let loggedIn = false, nextPage = 'home';
 const PUBLIC_PAGES = ['home', 'about', 'login', 'signup'];   // everything else needs a login
@@ -1068,7 +1077,7 @@ on('signupForm', 'submit', e => {
    ===================================================== */
 
 /* ---- Saved state: keeps login, points, spots, reports, photos, ratings between pages ---- */
-const STORE = 'qs-data-v2';
+const STORE = 'qs-data-v4';
 function save() {
     const data = {
         loggedIn, pos: state.pos, rid, pid, social,
