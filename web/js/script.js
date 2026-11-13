@@ -148,38 +148,35 @@ class User {
 
 const mins = m => Date.now() - m * 60000;
 const spots = [
-    new Library({
-        id: 1, name: 'Hall of Books Library', address: 'Near the campus main gate', x: 36, y: 28, hours: [8, 19], price: 0, capacity: 60, seats: 24, noise: 1, crowd: 2,
-        fac: { wifi: true, mbps: 15, outlets: true, aircon: true }, description: 'A large air-conditioned reading hall with long shared tables and individual carrels. Staff enforce a strict silence policy, so it suits deep focus and exam review.', rules: 'Silence. No calls. Food and drinks are not allowed.', busy: busyCurve(13, 3), updatedAt: mins(8)
+    new Cafe({
+        id: 1, name: 'Libro Espresso', address: 'Gulod Labac, Batangas City', x: 82, y: 56, hours: [11, 21], price: 150, capacity: 30, seats: 12, noise: 2, crowd: 2,
+        fac: { wifi: true, mbps: 20, outlets: true, aircon: true, food: true }, description: 'A book-themed café with comfortable tables, coffee, and meals. A relaxed place to read or work on laptop tasks, and calmer on weekday mornings.', rules: 'Order at least one item. Keep calls short.', busy: busyCurve(15, 4), updatedAt: mins(8)
     }),
     new Cafe({
-        id: 2, name: 'Kape Tahimik Café', address: 'Corner of the main road', x: 62, y: 36, hours: [9, 22], price: 120, capacity: 28, seats: 6, noise: 2, crowd: 3,
-        fac: { wifi: true, mbps: 30, outlets: true, aircon: true, food: true }, description: 'A cozy café with window-side tables and plenty of outlets. It gets lively in the late afternoon, so go earlier if you need it quiet.', rules: 'Order at least one item. Keep calls short.', busy: busyCurve(16, 4), updatedAt: mins(12)
+        id: 2, name: 'But First, Coffee', address: 'Alangilan, Batangas City', x: 62, y: 36, hours: [9, 21], price: 100, capacity: 24, seats: 7, noise: 2, crowd: 3,
+        fac: { wifi: true, mbps: 15, outlets: true, aircon: true, food: true }, description: 'A popular coffee shop in Alangilan that students visit after class. It fills up in the late afternoon, so go earlier if you need a seat.', rules: 'Order at least one item.', busy: busyCurve(16, 4), updatedAt: mins(12)
     }),
     new StudyRoom({
-        id: 3, name: 'Sulok Study Room', address: 'Second floor, near the dorms', x: 24, y: 50, hours: [8, 21], price: 40, capacity: 12, seats: 5, noise: 1, crowd: 1,
-        fac: { wifi: true, mbps: 20, outlets: true, aircon: true }, description: 'Small rooms rented by the hour on the second floor of a building near the dorms. Solo study only, with desk lamps and an almost silent atmosphere.', rules: 'Quiet room. Group discussions are not allowed.', busy: busyCurve(18, 3), updatedAt: mins(25)
+        id: 3, name: 'BSU Student Area', address: 'BatStateU Alangilan Campus, Golden Country Homes', x: 36, y: 28, hours: [7, 19], price: 0, capacity: 50, seats: 20, noise: 2, crowd: 2,
+        fac: { wifi: true, mbps: 10, outlets: true }, description: 'An open student area on campus with free seating for group work and review between classes. It can get noisy when classes break.', rules: 'Keep noise down. Clean up after use.', busy: busyCurve(12, 3), updatedAt: mins(25)
     }),
-    new CoworkingSpace({
-        id: 4, name: 'Hub 8 Co-working', address: 'Beside the pharmacy', x: 70, y: 58, hours: [8, 22], price: 80, capacity: 40, seats: 18, noise: 2, crowd: 2,
-        fac: { wifi: true, mbps: 80, outlets: true, aircon: true, food: true }, description: 'A modern co-working space with hot desks, phone booths for calls, and the fastest Wi-Fi on this list. Good for group work and long sessions.', rules: 'Phone booths available for calls.', busy: busyCurve(11, 3), updatedAt: mins(5)
+    new Library({
+        id: 4, name: 'BSU Library', address: '2/F College of Engineering Building, BatStateU-Alangilan, Golden Country Homes', x: 44, y: 20, hours: [7, 19], price: 0, capacity: 80, seats: 35, noise: 1, crowd: 1,
+        fac: { wifi: true, mbps: 20, outlets: true, aircon: true }, description: 'The campus library on the second floor of the College of Engineering Building. Quiet reading areas and shared tables, good for deep focus and exam review.', rules: 'Silence. No calls. Food and drinks are not allowed.', busy: busyCurve(13, 3), updatedAt: mins(5)
     }),
-    new Cafe({
-        id: 5, name: 'Tambayan Café', address: 'Across the engineering building', x: 48, y: 18, hours: [10, 21], price: 90, capacity: 20, seats: 0, noise: 3, crowd: 3,
-        fac: { wifi: true, mbps: 10, food: true }, description: 'A student hangout across from the engineering building with cheap snacks and a busy crowd. Better for casual review than deep focus.', rules: 'Order at least one item.', busy: busyCurve(15, 4), updatedAt: mins(3)
-    }),
-    new Cafe({
-        id: 6, name: 'Pahinga Corner Café', address: 'Side street, five minutes from the gate', x: 82, y: 24, hours: [8, 20], price: 60, capacity: 16, seats: 9, noise: 2, crowd: 1,
-        fac: { outlets: true, aircon: true, food: true }, description: 'A calm side-street café with no Wi-Fi, which keeps it quiet. Good for reading, handwritten notes, and paperwork.', rules: 'No Wi-Fi. Good for reading and paperwork.', busy: busyCurve(14, 3), updatedAt: mins(40)
+    new Library({
+        id: 5, name: 'Batangas City Public Library and Information Center', address: 'City Library Building, City Hall Complex, P. Burgos Street, Batangas City', x: 18, y: 54, hours: [8, 17], price: 0, capacity: 40, seats: 22, noise: 1, crowd: 1,
+        fac: { wifi: true, mbps: 10, outlets: true, aircon: true }, description: 'The city public library with a reading area open to everyone. A calm choice for reading and review, and usually less crowded than the campus spots.', rules: 'Silence. Food and drinks are not allowed.', busy: busyCurve(11, 3), updatedAt: mins(40)
     })
 ];
 const byId = id => spots.find(s => s.id === id);
 let rid = 1, pid = 1;
 [
-    [1, 'Mika', 1, 2, 24, 'Reading Hall is calm, back tables are free.', 8, 4, 0], [1, 'Paolo', 1, 1, 30, '', 95, 2, 0],
-    [2, 'Jen', 2, 3, 6, 'Almost full. Outlets near the window are taken.', 12, 3, 1], [2, 'Anon', 1, 1, 20, 'Quiet now', 70, 1, 2],
-    [3, 'Ria', 1, 1, 5, 'Good for solo review.', 25, 5, 0], [4, 'Paolo', 2, 2, 18, 'Phone booths are open.', 5, 2, 0],
-    [5, 'Mika', 3, 3, 0, 'Full and loud, skip it.', 3, 6, 0], [6, 'Jen', 2, 1, 9, 'Empty, no Wi-Fi though.', 40, 1, 0]
+    [1, 'Mika', 2, 2, 12, 'Plenty of tables, outlets are near the wall.', 8, 4, 0], [1, 'Paolo', 1, 1, 15, 'Quiet in the morning.', 95, 2, 0],
+    [2, 'Jen', 2, 3, 7, 'Almost full. Outlets near the window are taken.', 12, 3, 1], [2, 'Anon', 1, 1, 18, 'Quiet now', 70, 1, 2],
+    [3, 'Ria', 2, 2, 20, 'Good spot between classes.', 25, 5, 0], [3, 'Paolo', 1, 1, 30, 'Quiet before noon.', 120, 2, 0],
+    [4, 'Paolo', 1, 1, 35, 'Quiet, tables at the back are free.', 5, 2, 0], [4, 'Mika', 1, 2, 25, 'Getting busier near exam week.', 60, 3, 0],
+    [5, 'Ria', 1, 1, 22, 'Calm and almost empty.', 40, 1, 0]
 ].forEach(([spotId, user, noise, crowd, seats, note, m, up, down]) => byId(spotId).reports.push(new Report({ id: rid++, spotId, user, noise, crowd, seats, note, ts: mins(m), up, down })));
 let user = new User('Guest', 'Student');
 let loggedIn = false, nextPage = 'home';
@@ -1071,7 +1068,7 @@ on('signupForm', 'submit', e => {
    ===================================================== */
 
 /* ---- Saved state: keeps login, points, spots, reports, photos, ratings between pages ---- */
-const STORE = 'qs-data-v1';
+const STORE = 'qs-data-v2';
 function save() {
     const data = {
         loggedIn, pos: state.pos, rid, pid, social,
