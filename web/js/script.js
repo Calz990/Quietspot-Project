@@ -348,7 +348,7 @@ const LEVELS = [
 const verdict = r => r.net() >= 3 ? 'Verified' : r.net() <= -1 ? 'Disputed' : 'Needs votes';
 function busyBars(s) {
     const nowH = new Date().getHours();
-    return s.busy.map((v, i) => { const h = 8 + i; return `<div class="${h === nowH ? 'now' : ''}" title="${fmtHour(h)}: ${v}% busy"><b style="height:${Math.max(6, v * .72)}px"></b><span>${i % 2 === 0 ? shortHour(h) : '&nbsp;'}</span></div>`; }).join('');
+    return s.busy.map((v, i) => { const h = 8 + i; return `<div class="${h === nowH ? 'now' : ''}" title="${fmtHour(h)}: ${v}% busy"><b style="height:${Math.max(6, v * .72)}px"></b><span>${i % 2 === 0 ? shortHour(h) : ' '}</span></div>`; }).join('');
 }
 function renderStats() {
     const quiet = spots.filter(s => s.noise === 1).length, open = spots.filter(s => s.checkAvailability()).length;
@@ -614,6 +614,19 @@ on('reportForm', 'submit', e => {
         $('dlgReport').close();
         refreshAll();
         award(10, 'status update sent');
+
+        // Sync report to Java backend
+        fetch('/api/report', {
+            method: 'POST',
+            body: new URLSearchParams({
+                username: user.userName,
+                spotId: s.id,
+                noise: r.noise,
+                crowd: r.crowd,
+                note: r.note
+            })
+        }).catch(err => console.warn('Backend report sync skipped:', err));
+
         [5000, 9000, 13000].forEach(ms => setTimeout(() => {
             r.up++;
             refreshAll();
@@ -683,7 +696,8 @@ on('addForm', 'submit', e => {
         if (!(mbps >= 0))
             throw new Error('Wi-Fi speed cannot be negative.');
         const jit = () => (Math.random() - .5) * 8;
-        const spot = new TYPES[$('a-type').value]({
+        const spotType = $('a-type').value;
+        const spot = new TYPES[spotType]({
             id: Math.max(...spots.map(s => s.id)) + 1, name, address: $('a-addr').value.trim() || 'Location pinned on the map',
             x: Math.min(94, Math.max(6, state.pos.x + jit())), y: Math.min(64, Math.max(6, state.pos.y + jit())), hours: [open, close], price, capacity: cap,
             seats: Number($('a-seats').value), noise: +$('a-noise').value, crowd: +$('a-crowd').value, rules: $('a-rules').value.trim(), description: $('a-desc').value.trim(), isNew: true,
@@ -701,6 +715,29 @@ on('addForm', 'submit', e => {
         state.sel = spot.id;
         refreshAll();
         award(25, 'new study spot added');
+
+        // Sync new spot to Java backend
+        fetch('/api/add-spot', {
+            method: 'POST',
+            body: new URLSearchParams({
+                type: spotType,
+                name: spot.name,
+                address: spot.address,
+                x: spot.x,
+                y: spot.y,
+                open: open,
+                close: close,
+                price: price,
+                mbps: mbps,
+                noise: spot.noise,
+                crowd: spot.crowd,
+                outlets: spot.facility.outlets,
+                aircon: spot.facility.aircon,
+                food: spot.facility.food,
+                description: spot.description,
+                rules: spot.rules
+            })
+        }).catch(err => console.warn('Backend add-spot sync skipped:', err));
     }
     catch (ex) {
         err.textContent = ex.message;
@@ -878,15 +915,15 @@ function renderFeed() {
     $('feed').innerHTML = list.map(s => {
         const sc = soc(s), avg = sc.sum / sc.count, fill = Math.round(sc.mine || avg), fav = user.favoriteSpots.has(s.id), d = s.distance(state.pos);
         const real = s.photos.length > 0, img = real ? s.photos[0].src : spotArt(s);
-        const stars = [1, 2, 3, 4, 5].map(i => `<button class="star ${i <= fill ? 'on' : ''}" data-act="rate" data-id="${s.id}" data-n="${i}" aria-label="Rate ${i} of 5 stars">&#9733;</button>`).join('');
-        const cms = sc.open ? `<div class="cms">${sc.comments.map((m, i) => `<div class="cm"><span class="av">${esc(m.user[0].toUpperCase())}</span><div class="bub"><b>${esc(m.user)}${m.mine ? ' (you)' : ''}</b> <small>${ago(m.ts)}</small><p>${esc(m.text)}</p><button class="lk" data-act="cm-like" data-id="${s.id}" data-i="${i}">&#9650; ${m.up || 0}</button>${m.mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}</div></div>`).join('')}
+        const stars = [1, 2, 3, 4, 5].map(i => `<button class="star ${i <= fill ? 'on' : ''}" data-act="rate" data-id="${s.id}" data-n="${i}" aria-label="Rate ${i} of 5 stars">★</button>`).join('');
+        const cms = sc.open ? `<div class="cms">${sc.comments.map((m, i) => `<div class="cm"><span class="av">${esc(m.user[0].toUpperCase())}</span><div class="bub"><b>${esc(m.user)}${m.mine ? ' (you)' : ''}</b> <small>${ago(m.ts)}</small><p>${esc(m.text)}</p><button class="lk" data-act="cm-like" data-id="${s.id}" data-i="${i}">▲ ${m.up || 0}</button>${m.mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}</div></div>`).join('')}
       <div class="cmrow"><input type="text" class="cm-in" data-id="${s.id}" placeholder="Write feedback about this spot" value="${esc(sc.draft)}" aria-label="Comment on ${esc(s.name)}"><button class="btn solid sm" data-act="cm-post" data-id="${s.id}">Post</button></div></div>` : '';
         return `<article class="card post">
-      <header><span class="av">${esc(s.name[0])}</span><div><h3>${esc(s.name)}</h3><small>${esc(s.kind)}${s.isOpen ? '' : ', closed now'} &middot; ${Math.max(1, Math.round(d / 60))} min walk (${d} m)</small></div>${s.isNew ? '<span class="tag solid">New</span>' : ''}</header>
-      <button class="pic" data-act="view" data-id="${s.id}" aria-label="Open details of ${esc(s.name)}"><img src="${img}" alt="${real ? 'Photo' : 'Illustration'} of ${esc(s.name)}">${real ? '' : '<span class="cap">Illustration &middot; open the spot to add a real photo</span>'}</button>
+      <header><span class="av">${esc(s.name[0])}</span><div><h3>${esc(s.name)}</h3><small>${esc(s.kind)}${s.isOpen ? '' : ', closed now'} · ${Math.max(1, Math.round(d / 60))} min walk (${d} m)</small></div>${s.isNew ? '<span class="tag solid">New</span>' : ''}</header>
+      <button class="pic" data-act="view" data-id="${s.id}" aria-label="Open details of ${esc(s.name)}"><img src="${img}" alt="${real ? 'Photo' : 'Illustration'} of ${esc(s.name)}">${real ? '' : '<span class="cap">Illustration · open the spot to add a real photo</span>'}</button>
       <div class="stat"><span class="lv">${meter(s.noise, NOISE[s.noise] + ' noise')} ${NOISE[s.noise]}</span><span class="lv">${meter(s.crowd, CROWD[s.crowd] + ' crowd')} ${CROWD[s.crowd]} crowd</span>${seatPill(s)}${extra(s)}<small>Updated ${ago(s.updatedAt)}</small></div>
       <div class="rate"><span class="stars" role="group" aria-label="Rating">${stars}</span><b>${avg.toFixed(1)}</b><small>(${sc.count} ratings)${sc.mine ? ', you rated ' + sc.mine : ''}</small></div>
-      <div class="acts"><button class="btn sm" data-act="cm-toggle" data-id="${s.id}">Comments (${sc.comments.length})</button><button class="btn sm" data-act="report" data-id="${s.id}">Report status</button><button class="btn sm" data-act="feed-photo" data-id="${s.id}">Add photo</button><button class="btn sm" data-act="share" data-id="${s.id}">Share</button><button class="btn sm" data-act="fav" data-id="${s.id}" aria-pressed="${fav}">${fav ? '&#9733; Saved' : '&#9734; Save'}</button><button class="btn sm solid" data-act="view" data-id="${s.id}">Details</button></div>
+      <div class="acts"><button class="btn sm" data-act="cm-toggle" data-id="${s.id}">Comments (${sc.comments.length})</button><button class="btn sm" data-act="report" data-id="${s.id}">Report status</button><button class="btn sm" data-act="feed-photo" data-id="${s.id}">Add photo</button><button class="btn sm" data-act="share" data-id="${s.id}">Share</button><button class="btn sm" data-act="fav" data-id="${s.id}" aria-pressed="${fav}">${fav ? '★ Saved' : '☆ Save'}</button><button class="btn sm solid" data-act="view" data-id="${s.id}">Details</button></div>
       ${cms}</article>`;
     }).join('');
 }
@@ -1003,7 +1040,7 @@ function renderReco() {
 }
 
 /* =====================================================
-   auth.js: Login and Sign Up (simulated, no real accounts).
+   auth.js: Login and Sign Up connected to Java AuthService.
    ===================================================== */
 
 // While logged out, only navigation and logout buttons work.
@@ -1043,19 +1080,30 @@ document.addEventListener('click', e => {
     refreshAll();
     go('home', 'Logged out.');
 });
-on('loginForm', 'submit', e => {
+on('loginForm', 'submit', async e => {
     e.preventDefault();
     const u = $('l-user').value.trim();
-    if (!u || $('l-pass').value.length < 6) {
-        $('lErr').textContent = 'Enter your username and a password of 6+ characters.';
-        return;
-    }
+    const p = $('l-pass').value;
     $('lErr').textContent = '';
-    authDone(u);
+
+    try {
+        const res = await fetch('/api/login', {
+            method: 'POST',
+            body: new URLSearchParams({ username: u, password: p })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+            $('lErr').textContent = data.error;
+            return;
+        }
+        authDone(data.userName);
+    } catch (err) {
+        $('lErr').textContent = 'Cannot connect to Java server. Make sure Main.java is running.';
+    }
 });
-on('signupForm', 'submit', e => {
+on('signupForm', 'submit', async e => {
     e.preventDefault();
-    const n = $('s-name').value.trim(), u = $('s-user').value.trim();
+    const n = $('s-name').value.trim(), u = $('s-user').value.trim(), p = $('s-pass').value;
     if (!n || !u) {
         $('sErr').textContent = 'Full name and username are required.';
         return;
@@ -1064,12 +1112,22 @@ on('signupForm', 'submit', e => {
         $('sErr').textContent = 'Enter a valid email.';
         return;
     }
-    if ($('s-pass').value.length < 6) {
-        $('sErr').textContent = 'Password needs 6+ characters.';
-        return;
-    }
     $('sErr').textContent = '';
-    authDone(u);
+
+    try {
+        const res = await fetch('/api/signup', {
+            method: 'POST',
+            body: new URLSearchParams({ username: u, password: p, userType: 'STUDENT' })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+            $('sErr').textContent = data.error;
+            return;
+        }
+        authDone(data.userName);
+    } catch (err) {
+        $('sErr').textContent = 'Cannot connect to Java server. Make sure Main.java is running.';
+    }
 });
 
 /* =====================================================
