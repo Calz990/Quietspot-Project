@@ -142,59 +142,70 @@ class User {
     }
 }
 
-/* =====================================================
-   data.js: Sample spots and the shared app state.
-   ===================================================== */
-
+//=====================================================
+//data.js: Sample spots and the shared app state.
+//=====================================================
 const mins = m => Date.now() - m * 60000;
-const spots = [
-    new Cafe({
-        id: 1, name: 'Libro Espresso', address: 'Gulod Labac, Batangas City', x: 82, y: 56, hours: [11, 21], price: 150, capacity: 30, seats: 12, noise: 2, crowd: 2,
-        fac: { wifi: true, mbps: 20, outlets: true, aircon: true, food: true }, description: 'A book-themed café with comfortable tables, coffee, and meals. A relaxed place to read or work on laptop tasks, and calmer on weekday mornings.', rules: 'Order at least one item. Keep calls short.', busy: busyCurve(15, 4), updatedAt: mins(8)
-    }),
-    new Cafe({
-        id: 2, name: 'But First, Coffee', address: 'Alangilan, Batangas City', x: 62, y: 36, hours: [9, 21], price: 100, capacity: 24, seats: 7, noise: 2, crowd: 3,
-        fac: { wifi: true, mbps: 15, outlets: true, aircon: true, food: true }, description: 'A popular coffee shop in Alangilan that students visit after class. It fills up in the late afternoon, so go earlier if you need a seat.', rules: 'Order at least one item.', busy: busyCurve(16, 4), updatedAt: mins(12)
-    }),
-    new StudyRoom({
-        id: 3, name: 'BSU Student Area', address: 'BatStateU Alangilan Campus, Golden Country Homes', x: 36, y: 28, hours: [7, 19], price: 0, capacity: 50, seats: 20, noise: 2, crowd: 2,
-        fac: { wifi: true, mbps: 10, outlets: true }, description: 'An open student area on campus with free seating for group work and review between classes. It can get noisy when classes break.', rules: 'Keep noise down. Clean up after use.', busy: busyCurve(12, 3), updatedAt: mins(25)
-    }),
-    new Library({
-        id: 4, name: 'BSU Library', address: '2/F College of Engineering Building, BatStateU-Alangilan, Golden Country Homes', x: 44, y: 20, hours: [7, 19], price: 0, capacity: 80, seats: 35, noise: 1, crowd: 1,
-        fac: { wifi: true, mbps: 20, outlets: true, aircon: true }, description: 'The campus library on the second floor of the College of Engineering Building. Quiet reading areas and shared tables, good for deep focus and exam review.', rules: 'Silence. No calls. Food and drinks are not allowed.', busy: busyCurve(13, 3), updatedAt: mins(5)
-    }),
-    new Library({
-        id: 5, name: 'Batangas City Public Library and Information Center', address: 'City Library Building, City Hall Complex, P. Burgos Street, Batangas City', x: 18, y: 54, hours: [8, 17], price: 0, capacity: 40, seats: 22, noise: 1, crowd: 1,
-        fac: { wifi: true, mbps: 10, outlets: true, aircon: true }, description: 'The city public library with a reading area open to everyone. A calm choice for reading and review, and usually less crowded than the campus spots.', rules: 'Silence. Food and drinks are not allowed.', busy: busyCurve(11, 3), updatedAt: mins(40)
-    })
-];
-const byId = id => spots.find(s => s.id === id);
+let spots = [];
 let rid = 1, pid = 1;
-[
-    [1, 'Mika', 2, 2, 12, 'Plenty of tables, outlets are near the wall.', 8, 4, 0], [1, 'Paolo', 1, 1, 15, 'Quiet in the morning.', 95, 2, 0],
-    [2, 'Jen', 2, 3, 7, 'Almost full. Outlets near the window are taken.', 12, 3, 1], [2, 'Anon', 1, 1, 18, 'Quiet now', 70, 1, 2],
-    [3, 'Ria', 2, 2, 20, 'Good spot between classes.', 25, 5, 0], [3, 'Paolo', 1, 1, 30, 'Quiet before noon.', 120, 2, 0],
-    [4, 'Paolo', 1, 1, 35, 'Quiet, tables at the back are free.', 5, 2, 0], [4, 'Mika', 1, 2, 25, 'Getting busier near exam week.', 60, 3, 0],
-    [5, 'Ria', 1, 1, 22, 'Calm and almost empty.', 40, 1, 0]
-].forEach(([spotId, user, noise, crowd, seats, note, m, up, down]) => byId(spotId).reports.push(new Report({ id: rid++, spotId, user, noise, crowd, seats, note, ts: mins(m), up, down })));
-/* Photos shown on each spot. Put the image files in the "images" folder, next to the "js" and "css" folders.
-   Format: [spot id, image file, caption, minutes ago]. Add more lines to show more photos for a spot (up to 12). */
-[
-    [1, 'images/libroespresso.jpg', 'Libro Espresso', 600],
-    [2, 'images/butfirstcoffee.jpg', 'But First, Coffee', 600],
-    [3, 'images/bsustudentarea.jpg', 'BSU Student Area', 600],
-    [4, 'images/bsulibrary.jpg', 'BSU Library', 600],
-    [5, 'images/batangascitylibrary.jpg', 'Batangas City Public Library and Information Center', 600]
-].forEach(([spotId, src, caption, m]) => byId(spotId).photos.push(new Photo({ id: pid++, user: 'QuietSpot', src, caption, ts: mins(m) })));
-let user = new User('Guest', 'Student');
-let loggedIn = false, nextPage = 'home';
-const PUBLIC_PAGES = ['home', 'about', 'login', 'signup'];   // everything else needs a login
-const state = {
-    sel: null, dashSpot: 1, ver: { spot: 'all', show: 'all' }, pos: { x: 50, y: 52 }, f: {
-        q: '', noise: 'any', crowd: 'any', price: 'any', sort: 'near', wifi: false, outlets: false, seats: false, open: false, saved: false
+
+const byId = id => spots.find(s => s.id == id);
+
+async function loadSpotsFromJava() {
+    try {
+        const res = await fetch('/api/spots');
+        if (!res.ok) throw new Error('Failed to load spots');
+        const data = await res.json();
+
+        spots = data.map(o => {
+            const fac = o.fac || {};
+            const base = {
+                id: o.id,
+                name: o.name,
+                address: o.address,
+                x: o.x,
+                y: o.y,
+                hours: o.hours,
+                price: o.price,
+                noice: o.noice,
+                crowd: o.crowd,
+                description: o.description || '',
+                rules: o.rules || '',
+                fac: {
+                    wifi: !!fac.wifi,
+                    mdps: !!fac.mdps || 0,
+                    outlets: !!fac.aircon,
+                    food: !!fac.food
+                },
+
+                //temp values seats *to be moved to backend*
+                capacity: 30,
+                seats: 10,
+                updatedAt: date.now()
+            };
+
+            //Create the correct subclass
+            switch (o.type) {
+            case 'Library':
+                return new Library(base);
+            case 'StudyRoom':
+                return new StudyRoom(base);
+            case 'CoworkingSpace':
+                return new CoworkingSpace(base);
+            default:
+                return new Cafe(base);
+            }
+        });
+
+        console.log('Loaded ' ${spots.length} ' spots from Java Database');
+        return true;
+    } catch (err) {
+        console.error('Could not load spots from Java:', err);
+        toast('Cannot connect to Java server. Make sure Main.java is running.');
+        return false;
     }
-};
+}
+
 
 /* =====================================================
    ui.js: Theme (Light/Dark), toasts, dialogs, and page navigation.
@@ -1191,32 +1202,43 @@ function loadState() {
 }
 window.addEventListener('pagehide', save);
 
-/* =====================================================
-   main.js: Start-up: runs when each page loads.
-   ===================================================== */
-
+ 
+//=====================================================
+//main.js: Start-up: runs when each page loads.
+//=====================================================
 loadState();
-fillHours();
-document.querySelectorAll('nav.main .pill').forEach(b => b.setAttribute('aria-current', b.dataset.page === CURRENT ? 'page' : 'false'));
-if (loggedIn) {
-    const b = $('authBtn');
-    b.textContent = 'Logout';
-    b.dataset.act = 'logout';
-}
-if (!PUBLIC_PAGES.includes(CURRENT) && !loggedIn) {
-    go(CURRENT);   // protected page opened while logged out: send to login
-}
-else {
-    refreshAll();
-    if (CURRENT === 'reco') renderReco();
-    let flash = null, wantAdd = false;
-    try {
-        flash = sessionStorage.getItem('qs-flash');
-        wantAdd = sessionStorage.getItem('qs-add');
-        sessionStorage.removeItem('qs-flash');
-        sessionStorage.removeItem('qs-add');
+loadSpotsFromJava().then(ok => {
+    if (ok) {
+        fillhours();
+        document.querySelectorAll('nav.main .pill').forEach(b => 
+            b.setAttribute('aria-current', b.dataset.page === CURRENT ? 'page' : 'false')
+        );
+
+        if (loggedIn) {
+            const b = $('authBtn');
+            b.textContent = 'Logout';
+            b.dataset.act = 'logout';
+        }
+        if (!PUBLIC_PAGES.includes(CURRENT) && !loggedIn) {
+            go(CURRENT);
+        }
+        else {
+            refreshAll();
+            if(CURRENT === 'reco') renderReco();
+
+            let flash = null, wantAdd = false;
+            try {
+                flash.sessionStorage.getItem('qs-flash');
+                wantAdd = sessionStorage.getItem('qs-add');
+                sessionStorage.removeItem('qs-flash');
+                sessionStorage.removeItem('qs-add');
+            }
+            catch (e) {}
+            if (flash) toast(flash);
+            if (wantAdd && $('dlgAdd') && loggedIn) {
+                $('addErr').textContent = '';
+                $('dlgAdd').showModal();
+            }
+        }
     }
-    catch (e) { }
-    if (flash) toast(flash);
-    if (wantAdd && $('dlgAdd') && loggedIn) { $('addErr').textContent = ''; $('dlgAdd').showModal(); }
-}
+});
