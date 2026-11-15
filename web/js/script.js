@@ -148,6 +148,35 @@ class User {
 const mins = m => Date.now() - m * 60000;
 let spots = [];
 let rid = 1, pid = 1;
+let loggedIn = false;
+let nextPage = 'home';
+let user = new User('Guest', 'Student');
+const PUBLIC_PAGES = [
+    'home', 
+    'about', 
+    'login', 
+    'signup'
+];
+const state = {
+    pos: {
+         x: 40, 
+         y: 35 
+        },
+    sel: null,
+    dashSpot: null,
+    f: {
+        q: '', 
+        noise: 'any', 
+        crowd: 'any', 
+        price: 'any', 
+        sort: 'near',
+        wifi: false, 
+        outlets: false, 
+        seats: false, 
+        open: false, 
+        saved: false
+    }
+};
 
 const byId = id => spots.find(s => s.id == id);
 
@@ -167,21 +196,22 @@ async function loadSpotsFromJava() {
                 y: o.y,
                 hours: o.hours,
                 price: o.price,
-                noice: o.noice,
+                noise: o.noise,
                 crowd: o.crowd,
                 description: o.description || '',
                 rules: o.rules || '',
                 fac: {
                     wifi: !!fac.wifi,
                     mdps: !!fac.mdps || 0,
-                    outlets: !!fac.aircon,
+                    outlets: !!fac.outlets,
+                    aircon: !!fac.aircon,
                     food: !!fac.food
                 },
 
                 //temp values seats *to be moved to backend*
                 capacity: 30,
                 seats: 10,
-                updatedAt: date.now()
+                updatedAt: Date.now()
             };
 
             //Create the correct subclass
@@ -1208,37 +1238,35 @@ window.addEventListener('pagehide', save);
 //=====================================================
 loadState();
 loadSpotsFromJava().then(ok => {
-    if (ok) {
-        fillhours();
-        document.querySelectorAll('nav.main .pill').forEach(b => 
-            b.setAttribute('aria-current', b.dataset.page === CURRENT ? 'page' : 'false')
-        );
+    if (!ok) return;
+    document.querySelectorAll('nav.main .pill').forEach(b =>
+        b.setAttribute('aria-current', b.dataset.page === CURRENT ? 'page' : 'false')
+    );
 
-        if (loggedIn) {
-            const b = $('authBtn');
-            b.textContent = 'Logout';
-            b.dataset.act = 'logout';
-        }
-        if (!PUBLIC_PAGES.includes(CURRENT) && !loggedIn) {
-            go(CURRENT);
-        }
-        else {
-            refreshAll();
-            if(CURRENT === 'reco') renderReco();
+    if (loggedIn) {
+        const b = $('authBtn');
+        b.textContent = 'Logout';
+        b.dataset.act = 'logout';
+    }
 
-            let flash = null, wantAdd = false;
-            try {
-                flash.sessionStorage.getItem('qs-flash');
-                wantAdd = sessionStorage.getItem('qs-add');
-                sessionStorage.removeItem('qs-flash');
-                sessionStorage.removeItem('qs-add');
-            }
-            catch (e) {}
-            if (flash) toast(flash);
-            if (wantAdd && $('dlgAdd') && loggedIn) {
-                $('addErr').textContent = '';
-                $('dlgAdd').showModal();
-            }
+    if (!PUBLIC_PAGES.includes(CURRENT) && !loggedIn) {
+        go(CURRENT);
+    } else {
+        refreshAll();
+        if (CURRENT === 'reco') renderReco();
+
+        let flash = null, wantAdd = false;
+        try {
+            flash = sessionStorage.getItem('qs-flash');
+            wantAdd = sessionStorage.getItem('qs-add');
+            sessionStorage.removeItem('qs-flash');
+            sessionStorage.removeItem('qs-add');
+        } catch (e) {}
+
+        if (flash) toast(flash);
+        if (wantAdd && $('dlgAdd') && loggedIn) {
+            $('addErr').textContent = '';
+            $('dlgAdd').showModal();
         }
     }
 });
