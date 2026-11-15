@@ -197,7 +197,7 @@ async function loadSpotsFromJava() {
             }
         });
 
-        console.log('Loaded ' ${spots.length} ' spots from Java Database');
+        console.log(`Loaded ${spots.length} spots from Java backend`);
         return true;
     } catch (err) {
         console.error('Could not load spots from Java:', err);
