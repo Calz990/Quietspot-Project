@@ -60,9 +60,9 @@ public class SpotRepository {
 
     public void loadDefaultSpots() {
         // 1.Libro Espresso
-        addspot(
+        addSpot(
             new Cafe(
-                nextID(),
+                nextId(),
                 "Libro Espresso",
                 "Gulod Labac, Batangas City", 
                 82, 56, 
@@ -85,7 +85,7 @@ public class SpotRepository {
         );
 
         // 2.But First, Coffee
-        addspot(
+        addSpot(
             new Cafe(
                 nextId(),
                 "But First, Coffee",
@@ -110,7 +110,7 @@ public class SpotRepository {
         );
 
         // 3.BSU Student Area
-        addspot(
+        addSpot(
             new StudyRoom(
                 nextId(),
                 "BSU Student Area",
@@ -131,11 +131,11 @@ public class SpotRepository {
                 ),
                 "An open student area on campus with free seating for group work and review between classes. It can get noisy when classes break.",
                 "Keep noise down. Clean up after use."
-            ),
+            )
         );
 
         // 4.BSU Library
-        addspot(
+        addSpot(
             new Library(
                 nextId(),
                 "BSU Library",
@@ -145,7 +145,7 @@ public class SpotRepository {
                     7, 19
                 },
                 0,
-                Noicelevel.MODERATE,
+                NoiseLevel.MODERATE,
                 CrowdLevel.LOW,
                 new Facility(
                     true,
@@ -170,7 +170,7 @@ public class SpotRepository {
                     8, 17
                 },
                 0,
-                Noicelevel.MODERATE,
+                NoiseLevel.MODERATE,
                 CrowdLevel.LOW,
                 new Facility(
                     true,
