@@ -202,7 +202,7 @@ async function loadSpotsFromJava() {
                 rules: o.rules || '',
                 fac: {
                     wifi: !!fac.wifi,
-                    mdps: !!fac.mdps || 0,
+                    mdps: fac.mdps || 0,
                     outlets: !!fac.outlets,
                     aircon: !!fac.aircon,
                     food: !!fac.food
@@ -227,8 +227,29 @@ async function loadSpotsFromJava() {
             }
         });
 
-        console.log(`Loaded ${spots.length} spots from Java backend`);
+        const photoMap = {
+            "Libro Espresso": "images/libroespresso.jpg",
+            "But First, Coffee": "images/butfirstcoffee.jpg",
+            "BSU Student Area": "images/bsustudentarea.jpg",
+            "BSU Library": "images/bsulibrary.jpg",
+            "Batangas City Public Library and Information Center": "images/batangascitylibrary.jpg"
+        };
+
+        spots.forEach(s => {
+            const src = photoMap[s.name];
+            if (src) {
+                s.photos = [{
+                    id: pid++,
+                    src: src,
+                    caption: s.name,
+                    mine: false
+                }];
+            }
+        });
+
+        console.log(`Loaded ${spots.length} spots from Java backend (with photos)`);
         return true;
+
     } catch (err) {
         console.error('Could not load spots from Java:', err);
         toast('Cannot connect to Java server. Make sure Main.java is running.');
@@ -637,49 +658,68 @@ function openReport(id) {
     <div class="foot"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn solid">Send update (+10 points)</button></div>`;
     $('dlgReport').showModal();
 }
-on('reportForm', 'submit', e => {
+on('reportForm', 'submit', async e => {
     e.preventDefault();
-    const s = byId(state.sel), err = $('repErr');
-    try {
-        const raw = $('r-seats').value.trim();
-        if (raw === '')
-            throw new Error('Enter how many seats are open.');
-        const r = new Report({
-            id: rid++, spotId: s.id, user: user.userName, mine: true, ts: Date.now(),
-            noise: +document.querySelector('input[name=r-noise]:checked').value, crowd: +document.querySelector('input[name=r-crowd]:checked').value,
-            seats: Number(raw), note: $('r-note').value.trim()
-        });
-        s.updateStatus(r);
-        s.reports.unshift(r);
-        user.reportsMade++;
-        $('dlgReport').close();
-        refreshAll();
-        award(10, 'status update sent');
 
-        // Sync report to Java backend
-        fetch('/api/report', {
+    const s = byId(state.sel);
+    if (!s) return;
+
+    const noise = +$('r-noise').value;
+    const crowd = +$('r-crowd').value;
+    const note  = ($('r-note') ? $('r-note').value.trim() : '');
+
+    // Temporary seats (we still keep seats on frontend only)
+    const seats = s.seats;
+
+    try {
+        const res = await fetch('/api/report', {
             method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({
                 username: user.userName,
                 spotId: s.id,
-                noise: r.noise,
-                crowd: r.crowd,
-                note: r.note
+                noise: noise,
+                crowd: crowd,
+                note: note
             })
-        }).catch(err => console.warn('Backend report sync skipped:', err));
+        });
 
-        [5000, 9000, 13000].forEach(ms => setTimeout(() => {
-            r.up++;
-            refreshAll();
-            award(2, 'Demo: another student upvoted your report');
-            if (r.net() >= 3 && !r.paid) {
-                r.paid = true;
-                setTimeout(() => award(15, 'Demo: the community verified your report'), 3300);
-            }
-        }, ms));
-    }
-    catch (ex) {
-        err.textContent = ex.message;
+        const data = await res.json();
+
+        if (!data.ok) {
+            toast(data.error || 'Report failed');
+            return;
+        }
+
+        // Update local spot
+        s.noise = noise;
+        s.crowd = crowd;
+        s.updatedAt = Date.now();
+
+        // Add a local report record
+        const report = new Report({
+            id: rid++,
+            spotId: s.id,
+            user: user.userName,
+            noise, crowd, note,
+            ts: Date.now(),
+            up: 0, down: 0, mine: true
+        });
+        s.reports.unshift(report);
+
+        // Points
+        user.reportsMade++;
+        if (data.points) user.points = data.points;
+        else user.points += 5;
+
+        toast('Report submitted! +5 points');
+        $('dlgReport').close();
+        refreshAll();
+        save();
+
+    } catch (err) {
+        console.error(err);
+        toast('Cannot connect to Java server.');
     }
 });
 function vote(id, dir) {
@@ -1177,6 +1217,7 @@ on('signupForm', 'submit', async e => {
 
 /* ---- Saved state: keeps login, points, spots, reports, photos, ratings between pages ---- */
 const STORE = 'qs-data-v4';
+const Social = {};
 function save() {
     const data = {
         loggedIn, pos: state.pos, rid, pid, social,
