@@ -1,10 +1,11 @@
-/* QuietSpot: script.js
-   Sections: helpers, model, data, ui, spot-list, dashboard, spot-detail, events,
-   palette, feed, feed-extras, reco, auth, main */
+// QuietSpot: script.js 
+// Sections: helpers, model, data, ui, spot-list, dashboard, spot-detail, events,
+// palette, feed, feed-extras, reco, auth, main
 
-/* =====================================================
-   helpers.js: Small helper functions used everywhere (DOM lookup, escaping text, time formatting).
-   ===================================================== */
+// =====================================================
+// helpers.js: Small helper functions used everywhere
+// (DOM lookup, escaping text, time formatting).
+// =====================================================
 
 const $ = id => document.getElementById(id);
 const CURRENT = document.body.dataset.page || 'home';   // which page file is open (set on <body data-page="...">)
@@ -26,9 +27,10 @@ const ago = ts => {
 const busyCurve = (peak, w, base = 8) => Array.from({ length: 13 }, (_, i) => Math.min(100, Math.round(base + 85 * Math.exp(-((8 + i - peak) ** 2) / (2 * w * w)))));
 const walk = m => Math.max(1, Math.ceil(m / 80)) + ' min';
 
-/* =====================================================
-   model.js: OOP model: Spot classes (Cafe, Library, StudyRoom...) and User.
-   ===================================================== */
+// =====================================================
+// model.js: OOP model: Spot classes 
+// (Cafe, Library, StudyRoom...) and User.
+// =====================================================
 
 class Facility {
     constructor({ wifi = false, mbps = 0, outlets = false, aircon = false, food = false } = {}) { Object.assign(this, { wifi, mbps, outlets, aircon, food }); }
@@ -142,9 +144,10 @@ class User {
     }
 }
 
-//=====================================================
-//data.js: Sample spots and the shared app state.
-//=====================================================
+// =====================================================
+// data.js: Sample spots and the shared app state.
+// =====================================================
+
 const mins = m => Date.now() - m * 60000;
 let spots = [];
 let rid = 1, pid = 1;
@@ -258,9 +261,10 @@ async function loadSpotsFromJava() {
 }
 
 
-/* =====================================================
-   ui.js: Theme (Light/Dark), toasts, dialogs, and page navigation.
-   ===================================================== */
+// =====================================================
+// ui.js: Theme (Light/Dark), toasts, dialogs, 
+// and page navigation.
+// =====================================================
 
 function applyTheme(t) {
     document.documentElement.setAttribute('data-theme', t);
@@ -297,7 +301,8 @@ function seatPill(s) {
     return `<span class="seat">${s.seats} open</span>`;
 }
 function renderChip() { $('whoChip').textContent = `${user.userName}, ${user.points} pts`; }
-/* Which file each page name opens. Navigation now opens another HTML file. */
+
+// Which file each page name opens. Navigation now opens another HTML file.
 const PAGE_FILES = {
     home: 'index.html', feed: 'feed.html', reco: 'reco.html', spots: 'spots.html',
     dash: 'dashboard.html', about: 'about.html', login: 'login.html', signup: 'signup.html'
@@ -317,9 +322,10 @@ function go(page, msg) {
     if (PAGE_FILES[page]) location.href = PAGE_FILES[page];
 }
 
-/* =====================================================
-   spot-list.js: Search/filter for the Spots page and the table, map, and home renderers.
-   ===================================================== */
+// =====================================================
+// spot-list.js: Search/filter for the Spots page and 
+// the table, map, and home renderers.
+// =====================================================
 
 function filtered() {
     const f = state.f;
@@ -399,9 +405,10 @@ function renderMap() {
     $('map').innerHTML = g;
 }
 
-/* =====================================================
-   dashboard.js: Dashboard page: points, badges, leaderboard, verification.
-   ===================================================== */
+// =====================================================
+// dashboard.js: Dashboard page: points, badges, 
+// leaderboard, verification.
+// =====================================================
 
 const BOARD = [['Mika', 85], ['Paolo', 62], ['Jen', 48], ['Ria', 35]];
 const LEVELS = [
@@ -524,9 +531,10 @@ function renderRewards() {
 }
 function renderDash() { if (!$('stats')) return; renderStats(); renderProfilePanel(); renderVerify(); renderRewards(); }
 
-/* =====================================================
-   spot-detail.js: Spot detail popup, status reports, votes, and the Add spot form.
-   ===================================================== */
+// =====================================================
+// spot-detail.js: Spot detail popup, status reports, 
+// votes, and the Add spot form.
+// =====================================================
 
 function renderTop() {
     const s = byId(state.sel);
@@ -703,7 +711,7 @@ on('addForm', 'submit', async e => {
         const x = Math.min(94, Math.max(6, state.pos.x + jit()));
         const y = Math.min(64, Math.max(6, state.pos.y + jit()));
 
-        // ── 1. Send to Java backend first ──────────────────────────────
+        // Send to backend first
         const res = await fetch('/api/add-spot', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -726,9 +734,9 @@ on('addForm', 'submit', async e => {
             throw new Error(data.error || 'Could not add spot on the server.');
         }
 
-        // ── 2. Create local object with the REAL id from Java ──────────
+        // Create local object with the REAL id
         const spot = new TYPES[spotType]({
-            id: data.id,                    // ← use backend id
+            id: data.id,
             name, address, x, y,
             hours: [open, close],
             price,
@@ -835,7 +843,7 @@ on('addForm', 'submit', e => {
         refreshAll();
         award(25, 'new study spot added');
 
-        // Sync new spot to Java backend
+        // Sync new spot to backend
         fetch('/api/add-spot', {
             method: 'POST',
             body: new URLSearchParams({
@@ -863,9 +871,9 @@ on('addForm', 'submit', e => {
     }
 });
 
-/* =====================================================
-   events.js: Click, keyboard, and form event listeners.
-   ===================================================== */
+// =====================================================
+// events.js: Click, keyboard, and form event listeners.
+// =====================================================
 
 document.addEventListener('click', e => {
     if (e.target.closest('[data-close]')) {
@@ -958,9 +966,10 @@ document.addEventListener('change', e => {
     }
 });
 
-/* =====================================================
-   palette.js: Color palette picker (saved in the browser).
-   ===================================================== */
+// =====================================================
+// palette.js: Color palette picker 
+// (saved in the browser).
+// =====================================================
 
 (function () {
     const sel = document.getElementById('palette');
@@ -980,9 +989,10 @@ document.addEventListener('change', e => {
     });
 })();
 
-/* =====================================================
-   feed.js: Feed page: spot posts with photo, rating, and comments.
-   ===================================================== */
+// =====================================================
+// feed.js: Feed page: spot posts with photo, rating, 
+// and comments.
+// =====================================================
 
 const social = {};
 const hsh = s => [...s.name].reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -1089,9 +1099,10 @@ document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.cl
     e.target.nextElementSibling.click();
 } });
 
-/* =====================================================
-   feed-extras.js: Feed extras: Add photo, Share, comment upvotes/delete, badges.
-   ===================================================== */
+// =====================================================
+// feed-extras.js: Feed extras: Add photo, Share, 
+// comment upvotes/delete, badges.
+// =====================================================
 
 function extra(s) {
     const left = s.hours[1] - new Date().getHours(), b = s.bestTime();
@@ -1136,9 +1147,10 @@ document.addEventListener('click', e => {
 });
 ['fq', 'fsort', 'fquiet'].forEach(i => on(i, i === 'fq' ? 'input' : 'change', renderFeed));
 
-/* =====================================================
-   reco.js: Reco page: ranks spots by what the student needs.
-   ===================================================== */
+// =====================================================
+// reco.js: Reco page: ranks spots by what the 
+// student needs.
+// =====================================================
 
 const RC = [
     ['quiet', 'Quiet', 1], ['outlets', 'Power outlets', 1], ['wifi', 'Wi-Fi'], ['aircon', 'Air-conditioning'], ['cheap', 'Free or cheap'], ['open', 'Open now'], ['seats', 'Has open seats']
@@ -1159,9 +1171,10 @@ function renderReco() {
     $('recoOut').innerHTML = r.slice(0, 5).map(({ s, hit }, n) => { const pc = Math.round(hit.length / pick.length * 100); return `<article class="card post rcard"><div class="stat"><b>#${n + 1} ${esc(s.name)}</b><span class="chip">${pc}% match</span>${seatPill(s)}<small>${s.distance(state.pos)} m away</small></div><div class="match"><i style="width:${pc}%"></i></div><p class="sub" style="margin:8px 0 10px">Matches: ${hit.map(h => RC.find(x => x[0] === h)[1]).join(', ') || 'none'}</p><button class="btn sm solid" data-act="view" data-id="${s.id}">Details</button></article>`; }).join('');
 }
 
-/* =====================================================
-   auth.js: Login and Sign Up connected to Java AuthService.
-   ===================================================== */
+// =====================================================
+// auth.js: Login and Sign Up connected to Java 
+// AuthService.
+// =====================================================
 
 // While logged out, only navigation and logout buttons work.
 document.addEventListener('click', e => {
@@ -1250,11 +1263,11 @@ on('signupForm', 'submit', async e => {
     }
 });
 
-/* =====================================================
-   main.js: Start-up: runs when the page loads.
-   ===================================================== */
+// =====================================================
+// main.js: Start-up: runs when the page loads.
+// =====================================================
 
-/* ---- Saved state: keeps login, points, spots, reports, photos, ratings between pages ---- */
+// Saved state: keeps login, points, spots, reports, photos, ratings between pages
 const STORE = 'qs-data-v4';
 const Social = {};
 function save() {
@@ -1316,6 +1329,7 @@ window.addEventListener('pagehide', save);
 //=====================================================
 //main.js: Start-up: runs when each page loads.
 //=====================================================
+
 loadState();
 loadSpotsFromJava().then(ok => {
     if (!ok) return;
