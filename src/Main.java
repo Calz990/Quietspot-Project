@@ -97,9 +97,8 @@ public class Main {
                 Facility f = s.getFacility();
                 sb.append(String.format(
                         "{\"id\":%d,\"type\":\"%s\",\"name\":\"%s\",\"address\":\"%s\",\"x\":%.1f,\"y\":%.1f," +
-                                "\"hours\":[%d,%d],\"price\":%.0f,\"noise\":%d,\"crowd\":%d,\"description\":\"%s\",\"rules\":\"%s\","
-                                +
-                                "\"fac\":{\"wifi\":%b,\"mbps\":%d,\"outlets\":%b,\"aircon\":%b,\"food\":%b}}",
+                        "\"hours\":[%d,%d],\"price\":%.0f,\"noise\":%d,\"crowd\":%d,\"description\":\"%s\",\"rules\":\"%s\"," +
+                        "\"fac\":{\"wifi\":%b,\"mbps\":%d,\"outlets\":%b,\"aircon\":%b,\"food\":%b}}",
                         s.getId(), s.getClass().getSimpleName(), esc(s.getName()), esc(s.getAddress()), s.getX(),
                         s.getY(),
                         s.getHours()[0], s.getHours()[1], s.getPrice(),

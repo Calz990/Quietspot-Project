@@ -658,68 +658,106 @@ function openReport(id) {
     <div class="foot"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn solid">Send update (+10 points)</button></div>`;
     $('dlgReport').showModal();
 }
-on('reportForm', 'submit', async e => {
+on('addForm', 'submit', async e => {
     e.preventDefault();
-
-    const s = byId(state.sel);
-    if (!s) return;
-
-    const noise = +$('r-noise').value;
-    const crowd = +$('r-crowd').value;
-    const note  = ($('r-note') ? $('r-note').value.trim() : '');
-
-    // Temporary seats (we still keep seats on frontend only)
-    const seats = s.seats;
+    const err = $('addErr');
+    err.textContent = '';
 
     try {
-        const res = await fetch('/api/report', {
+        const name = $('a-name').value.trim();
+        if (name.length < 3)
+            throw new Error('Enter a name with at least 3 characters.');
+        if (spots.some(s => s.name.toLowerCase() === name.toLowerCase()))
+            throw new Error('This spot is already listed.');
+
+        const open  = +$('a-open').value;
+        const close = +$('a-close').value;
+        if (close <= open)
+            throw new Error('Closing time must be later than opening time.');
+
+        const cap = Number($('a-cap').value);
+        if (!Number.isInteger(cap) || cap < 1)
+            throw new Error('Total seats must be a whole number of at least 1.');
+
+        const price = Number($('a-price').value);
+        const mbps  = Number($('a-mbps').value);
+        if (!(price >= 0)) throw new Error('Price cannot be negative.');
+        if (!(mbps  >= 0)) throw new Error('Wi-Fi speed cannot be negative.');
+
+        const seats = Number($('a-seats').value);
+        if (!Number.isInteger(seats) || seats < 0 || seats > cap)
+            throw new Error(`Open seats must be between 0 and ${cap}.`);
+
+        const spotType = $('a-type').value;
+        const address  = $('a-addr').value.trim() || 'Location pinned on the map';
+        const noise    = +$('a-noise').value;
+        const crowd    = +$('a-crowd').value;
+        const outlets  = $('a-outlets').checked;
+        const aircon   = $('a-aircon').checked;
+        const food     = $('a-food').checked;
+        const description = $('a-desc').value.trim();
+        const rules       = $('a-rules').value.trim();
+
+        // small random offset so pins don’t stack exactly on the user’s location
+        const jit = () => (Math.random() - 0.5) * 8;
+        const x = Math.min(94, Math.max(6, state.pos.x + jit()));
+        const y = Math.min(64, Math.max(6, state.pos.y + jit()));
+
+        // ── 1. Send to Java backend first ──────────────────────────────
+        const res = await fetch('/api/add-spot', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({
-                username: user.userName,
-                spotId: s.id,
-                noise: noise,
-                crowd: crowd,
-                note: note
+                type:        spotType,
+                name,
+                address,
+                x, y,
+                open, close,
+                price,
+                mbps,
+                noise, crowd,
+                outlets, aircon, food,
+                description, rules
             })
         });
 
         const data = await res.json();
-
         if (!data.ok) {
-            toast(data.error || 'Report failed');
-            return;
+            throw new Error(data.error || 'Could not add spot on the server.');
         }
 
-        // Update local spot
-        s.noise = noise;
-        s.crowd = crowd;
-        s.updatedAt = Date.now();
-
-        // Add a local report record
-        const report = new Report({
-            id: rid++,
-            spotId: s.id,
-            user: user.userName,
-            noise, crowd, note,
-            ts: Date.now(),
-            up: 0, down: 0, mine: true
+        // ── 2. Create local object with the REAL id from Java ──────────
+        const spot = new TYPES[spotType]({
+            id: data.id,                    // ← use backend id
+            name, address, x, y,
+            hours: [open, close],
+            price,
+            capacity: cap,
+            seats,
+            noise, crowd,
+            rules, description,
+            isNew: true,
+            fac: {
+                wifi: mbps > 0,
+                mbps,
+                outlets, aircon, food
+            }
         });
-        s.reports.unshift(report);
 
-        // Points
-        user.reportsMade++;
-        if (data.points) user.points = data.points;
-        else user.points += 5;
+        spots.push(spot);
+        user.spotsAdded++;
 
-        toast('Report submitted! +5 points');
-        $('dlgReport').close();
+        $('addForm').reset();
+        fillHours();
+        $('dlgAdd').close();
+        clearFilters();
+        state.sel = spot.id;
         refreshAll();
+        award(25, 'new study spot added');
         save();
 
-    } catch (err) {
-        console.error(err);
-        toast('Cannot connect to Java server.');
+    } catch (ex) {
+        err.textContent = ex.message;
     }
 });
 function vote(id, dir) {
@@ -849,15 +887,16 @@ document.addEventListener('click', e => {
         }
     }
     if (act === 'go-add') {
-        if ($('dlgAdd')) {
-            $('addErr').textContent = '';
-            $('dlgAdd').showModal();
-        }
-        else {   // this page has no Add dialog (e.g. Home), so open the Spots page and show it there
-            try { sessionStorage.setItem('qs-add', '1'); } catch (x) { }
-            go('spots');
-        }
+    if ($('dlgAdd')) {
+        $('addErr').textContent = '';
+        fillHours();
+        $('dlgAdd').showModal();
     }
+    else {
+        try { sessionStorage.setItem('qs-add', '1'); } catch (x) { }
+        go('spots');
+    }
+}
     if (act === 'view')
         openSpot(id);
     if (act === 'report')
@@ -1294,6 +1333,7 @@ loadSpotsFromJava().then(ok => {
         go(CURRENT);
     } else {
         refreshAll();
+        fillHours();
         if (CURRENT === 'reco') renderReco();
 
         let flash = null, wantAdd = false;
@@ -1307,6 +1347,7 @@ loadSpotsFromJava().then(ok => {
         if (flash) toast(flash);
         if (wantAdd && $('dlgAdd') && loggedIn) {
             $('addErr').textContent = '';
+            fillHours();
             $('dlgAdd').showModal();
         }
     }
