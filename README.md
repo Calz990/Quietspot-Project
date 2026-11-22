@@ -1,199 +1,112 @@
 # QuietSpot
 
 ## 1. Project Title
-
-QuietSpot
+**QuietSpot** – Real-Time Study Area Tracker and Finder
 
 ## 2. Project Description
+QuietSpot is a Java-based **web application** designed to help students and faculty find conducive places to study around Batangas City (specifically near BatStateU Alangilan Campus). It provides real-time information about study spots, including their location, crowd level, noise level, available facilities, Wi-Fi availability, and pricing.
 
-QuietSpot is a Java-based application designed to help students find a suitable place to study. It provides information about study spots, including their location, crowd level, noise level, facilities, Wi-Fi availability, and price.
-
-The system allows users to search and filter study spots based on their needs and preferences. Users can also submit updates about the current crowd and noise level of a study spot and add new study spots to the system.
+The system allows users to search and filter study spots based on their preferences, submit crowd-sourced status updates on current noise and crowd levels, and recommend new study areas.
 
 ## 3. Problem Being Addressed
+Students and faculty often spend unnecessary time searching for a quiet, comfortable, and suitable place to study or work, especially during breaks and examination periods. While libraries, cafés, and co-working spaces exist around Batangas City, users have no way of knowing beforehand whether a location is overcrowded, noisy, or equipped with essential amenities like power outlets and reliable Wi-Fi.
 
-Students often have difficulty finding a quiet, comfortable, and suitable place to study, especially during breaks or exam periods. Although cafes, libraries, and other study areas are available, students may not know which places are suitable for studying or whether they have reliable Wi-Fi, power outlets, and an appropriate noise level.
+QuietSpot solves this problem by centralizing study spot information and enabling real-time, community-driven status updates.
 
-QuietSpot addresses this problem by providing information about study spots and allowing users to share updates about their current condition.
+## 4. Justification of OOP Approach
+An Object-Oriented Programming (OOP) approach is ideal for QuietSpot because the domain consists of distinct, interacting real-world entities—different types of study locations (`Library`, `CoworkingSpace`, `StudyRoom`), user accounts (`UserAccount`), facilities (`Facility`), and status reports (`ReportStatus`).
 
-## 4. Project Objectives
+- **Modularity & Scalability:** Modeling each study spot type as a subclass of an abstract `SpotArea` allows new categories of study venues to be added without rewriting core search or reporting logic.
+- **Data Integrity & Security:** Encapsulating sensitive user data (such as passwords and reward points) and enforcing validation rules through custom exceptions (`InvalidInputException`) ensures reliable and secure system operations.
+- **Maintainability:** Separating data models (`model`), business logic (`service`), and HTTP routing (`Main`) creates a clean, maintainable architecture.
+
+## 5. Project Objectives
 
 ### General Objective
-
-To develop a Java-based application that helps students find, filter, and check the current status of nearby study spots.
+To develop a Java-based web application that helps users locate, filter, and monitor the real-time status of study spots within Batangas City.
 
 ### Specific Objectives
+1. Provide search and custom filtering based on noise level, crowd level, facilities, and price.
+2. Enable real-time, crowd-sourced updates on study spot crowd and noise levels.
+3. Allow users to submit and recommend new study spots.
+4. Demonstrate core Java Object-Oriented Programming (OOP) principles—Abstraction, Encapsulation, Inheritance, Polymorphism, and Exception Handling—in a working full-stack application.
 
-The project aims to:
+## 6. Target Users
+- **Students:** Use QuietSpot to quickly locate quiet, budget-friendly, and well-equipped spaces for studying, reviewing, or working on academic requirements.
+- **Faculty and Staff:** Use the platform to find suitable spaces for student consultations, paper grading, or focused work.
 
-1. Provide search and filtering based on noise level, crowd level, facilities, and price.
-2. Allow students to submit updates about crowd level and noise.
-3. Allow users to add and recommend new study spots.
-4. Apply Java Object-Oriented Programming (OOP) concepts in managing the system.
+## 7. Main Features
+- **Location-Based Discovery:** Displays study spots near the user in Batangas City with distance and area details.
+- **Custom Filtering:** Filters study spots by `NoiseLevel`, `CrowdLevel`, available `Facility` amenities (Wi-Fi, outlets), and price.
+- **Live Spot Status:** Reflects real-time crowd and noise conditions updated through user reports.
+- **Detailed Spot Profiles:** Shows operating hours, location, facilities, and category-specific attributes (e.g., silent zones for libraries, hourly rates for co-working spaces).
+- **Crowd-Sourced Spot & Status Submission:** Allows registered users to submit live noise/crowd reports and recommend new study locations.
+- **Community Verification & Gamification:** Awards points to active contributors and supports report verification.
+- **Favorites & Navigation:** Lets users bookmark preferred study spots and open directions via external mapping services.
 
-## 5. Target Users
-
-### Students
-
-Students can use QuietSpot to search for a convenient and suitable place to study, review, or work on school requirements.
-
-### Faculty and Staff
-
-Faculty and staff can use the system to search for suitable spaces for student consultations, paper grading, or quiet working areas.
-
-## 6. Main Features
-
-### Location-Based Search
-
-Finds study spots near the user based on their current location.
-
-### Custom Filtering
-
-Allows users to filter study spots based on noise level, crowd level, available outlets, Wi-Fi information, and price.
-
-### Live Spot Status
-
-Shows the estimated crowd level and noise level of a study spot based on user-submitted updates.
-
-### Spot Profile
-
-Provides information about a study spot, including opening hours, location, available facilities, rules, and usual busy hours.
-
-### Spot Submission
-
-Allows users to report the current noise and crowd levels of a study spot. Users can also add new study spots and provide information about them.
-
-### Community Verification
-
-Allows users to upvote or downvote reports to help check the accuracy of submitted information.
-
-### Favorites and Navigation
-
-Allows users to save favorite study spots and get directions through available mapping services such as Google Maps or Waze.
-
-### Gamification and Rewards
-
-Provides basic points and badges to users who actively contribute information and updates.
-
-## 7. Technologies Used
-
-- Java
-- Object-Oriented Programming (OOP)
-- Graphical User Interface (GUI)
-- GitHub
-- Git
-
-## 8. Team Members and Roles
-
-### Bagsit, Charisse T.
-
-- Coordinates team tasks and deadlines
-- Communicates with the instructor
-- Facilitates team meetings
-- Maintains the README and project documentation
-- Prepares screenshots
-- Assists in testing and checking the application
-
-### Robines, Princess Khaila L.
-
-- Develops system requirements
-- Designs classes and UML diagrams
-- Works on the overall application structure
-- Assists in planning the program flow
-- Assists in the user interface and feature integration
-
-### Servando, Joshua R.
-
-- Develops and coordinates the implementation of Java classes and methods
-- Works on OOP features
-- Assists in coding the main system functions
-- Works on input validation and system operations
+## 8. Technologies Used
+- **Backend:** Java (`com.sun.net.httpserver.HttpServer`, OOP Architecture)
+- **Frontend:** HTML5, CSS3, Vanilla JavaScript (`fetch` API)
+- **Version Control:** Git & GitHub
 
 ## 9. OOP Concepts Demonstrated
 
-### Classes and Objects
+| OOP Concept | Implementation in QuietSpot |
+| :--- | :--- |
+| **Abstraction** | `SpotArea` is implemented as an `abstract` base class defining shared attributes and abstract methods (`getAreaCategory()`) for all study venues. |
+| **Encapsulation** | Model classes (`SpotArea`, `UserAccount`, `ReportStatus`, `Facility`) keep fields `private` and expose controlled access via constructors, getters, and state-updating methods. |
+| **Inheritance** | `Library`, `CoworkingSpace`, and `StudyRoom` extend `SpotArea`, inheriting common properties while defining specialized attributes (e.g., `hasSilentZone`, `hourlyRate`, `maxCapacity`). |
+| **Polymorphism** | Subclasses override `SpotArea` methods to provide category-specific behavior while being managed uniformly inside `List<SpotArea>` collections in `SpotRepository`. |
+| **Exception Handling & Validation** | Custom `InvalidInputException` validates user registration, login credentials, and report submissions, preventing invalid data states. |
+| **Collections & Enumerations** | Uses `List`, `Map`, and `HashMap` (`SpotRepository`, `AuthService`, `ReportService`) alongside type-safe `enum` classes (`NoiseLevel`, `CrowdLevel`, `UserType`). |
 
-Classes are used to represent core entities such as SpotArea, UserAccount, and ReportStatus. Objects represent individual study spots, users, and reports.
+## 10. System Architecture & UML Class Diagram
+> *Note: The finalized UML Class Diagram (`uml-class-diagram.png`) will be uploaded here upon completion of final code integration.*
 
-### Methods
+## 11. Instructions for Running the Program
+1. Ensure **Java Development Kit (JDK 17 or higher)** is installed on your machine.
+2. Clone the repository:
+   ```bash
+   git clone [https://github.com/Calz990/Quietspot-Project.git](https://github.com/Calz990/Quietspot-Project.git)
+   ```
+3. Open the `Quietspot-Project` folder in VS Code (with the Extension Pack for Java) or any Java-supported IDE.
+4. Navigate to `src/Main.java` and run the `main` method to start the built-in Java HTTP server on port `8080`.
+5. Open a web browser and go to:
+   ```text
+   http://localhost:8080
+   ```
 
-Methods are used to perform system operations such as searching, filtering, submitting updates, adding new spots, and displaying information.
+## 12. Sample Screenshots & Test Cases
+> *Note: Application screenshots and validation test case outputs will be added in the `screenshots/` directory once the web interface is finalized.*
 
-### Encapsulation
+Planned visual documentation includes:
+- Backend Server Startup (`http://localhost:8080` running in terminal)
+- Landing Page & Study Spot Dashboard
+- Custom Search and Filtering (`NoiseLevel` & `CrowdLevel`)
+- User Registration & Login (Valid Case & `InvalidInputException` Error Handling Case)
+- Live Status Report Submission & Points Update
 
-Data such as study spot information, user information, noise level, Wi-Fi status, and price are kept within classes and accessed or modified through appropriate methods.
+## 13. Known Limitations
+1. Coverage is currently limited to study spots within Batangas City (primarily near Alangilan Campus).
+2. Users must register and log in to submit live reports or add new study spots.
+3. The system comes with pre-loaded study spots in memory (`SpotRepository`) and does not yet use an external persistent database.
+4. Crowd and noise levels rely on user-submitted reports rather than IoT sensors or cameras.
+5. Wi-Fi availability is informational and does not perform live bandwidth speed tests.
+6. Seat reservation, booking, and online payments are outside the scope of the system.
+7. Navigation relies on external mapping services (e.g., Google Maps).
+8. Gamification is limited to points and badges with no monetary rewards.
 
-### Inheritance
+## 14. Future Improvements
+- Integrate a relational database (e.g., MySQL/PostgreSQL) for persistent storage of users, spots, and report history.
+- Expand geographic coverage beyond Batangas City.
+- Add automated report credibility scoring and timestamp decay for outdated reports.
 
-A base class can be extended by more specific types of places that share common properties while having their own specialized attributes or behaviors.
-
-### Polymorphism
-
-Different types of study spots or reports can be handled using common methods or interfaces, allowing the system to work with different types of study locations.
-
-### Abstraction
-
-Complex operations such as searching, filtering, and status processing can be handled through simple methods or interfaces.
-
-### Exception Handling
-
-Exception handling can be used to handle invalid inputs, missing information, and other errors while providing user-friendly messages.
-
-### Arrays and Data Handling
-
-Arrays or ArrayList can be used to store and process study spots, reports, and favorite locations.
-
-## 10. Instructions for Running the Program
-
-1. Make sure Java is installed on the computer.
-2. Clone or download the QuietSpot project from the GitHub repository.
-3. Open the project using a Java-supported IDE.
-4. Compile the Java source files.
-5. Run the main Java class of the application.
-6. Follow the instructions provided by the application's graphical user interface.
-
-## 11. Sample Screenshots
-
-Sample screenshots of the QuietSpot application will be added here after the application is completed.
-
-Screenshots may include:
-
-- Welcome or Login Screen
-- Registration Screen
-- Main Menu
-- Study Spot Search
-- Study Spot Profile
-- Filtering Feature
-- Status Update
-- Spot Submission
-- Favorites
-- Other completed system features
-
-## 12. Known Limitations
-
-1. The system only covers study spots located within Batangas City.
-2. Every user must create and log in to an account to use the system.
-3. The application will have pre-loaded popular and well-known study spots so new users can immediately view available places upon opening the application.
-4. Users can add or submit information about additional study spots that are not yet included in the system.
-5. Seat availability is not covered because it will be coming from the client's end. Crowd level and noise level will depend on user-submitted updates and may not always be accurate.
-6. The system does not automatically monitor seats, crowd level, or noise level using cameras or sensors.
-7. The system does not provide actual Wi-Fi speed testing. Wi-Fi information will be based on the information provided for each study spot.
-8. The system does not include online payment or study spot reservation or booking.
-9. The system depends on available location and mapping services for navigation.
-10. The gamification feature is limited to basic points and badges and does not provide monetary rewards.
-
-## 13. Future Improvements
-
-Future improvements may include improving the accuracy and reliability of study spot information, expanding the coverage of study spots to other locations, and improving the system's search, filtering, and user contribution features.
-
-Additional improvements may also be considered based on user feedback and the results of testing the completed application.
-
-## 14. Project Contributors
+## 15. Team Members and Roles
 
 ### Java thRICE – Team 6
 
-|                  Name                 |      GitHub Username      |
-|---------------------------------------|---------------------------|
-| Bagsit, Charisse T.                   |      Charisse-Bagsit      |
-| Robines, Princess Khaila L.           |     khailarobines_tech    |
-| Servando, Joshua R.                   |          Calz990          |
+| Name | GitHub Username | Key Responsibilities |
+| :--- | :--- | :--- |
+| **Bagsit, Charisse T.** | `Charisse-Bagsit` | Project coordination, instructor communication, `README.md` & documentation, test case screenshots, QA testing |
+| **Robines, Princess Khaila L.** | `khailarobines_tech` | System requirements analysis, UML Class Diagram design, overall architecture, UI & feature integration |
+| **Servando, Joshua R.** | `Calz990` | Backend Java classes & OOP implementation, input validation, `InvalidInputException`, core service logic |
