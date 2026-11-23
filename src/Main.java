@@ -133,8 +133,7 @@ public class Main {
             }
         });
 
-        // 7. API: ADD NEW SPOT (gamit ang SpotRepository at Subclasses: Cafe, Library,
-        // StudyRoom, CoworkingSpace)
+        // 7. API: ADD NEW SPOT (gamit ang SpotRepository at Subclasses: Cafe, Library, tudyRoom, CoworkingSpace)
         server.createContext("/api/add-spot", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
                 return;
