@@ -608,25 +608,6 @@ td small {
   width: 9px;
 }
 
-.seat {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 2px 12px;
-  font-weight: 700;
-  font-size: .84rem;
-  border: 2px solid var(--ink);
-  white-space: nowrap;
-}
-
-.seat.full {
-  background: var(--ink);
-  color: var(--on-ink);
-}
-
-.seat.low {
-  border-style: dashed;
-}
-
 .acts {
   display: flex;
   gap: 6px;
@@ -2023,18 +2004,22 @@ input[type=password]:focus {
   background: var(--bad);
 }
 
-:root:not([data-palette="bw"]) .seat {
-  border-color: var(--ok);
-  color: var(--ok);
+.addphoto {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-:root:not([data-palette="bw"]) .seat.low {
-  border-color: var(--warn);
-  color: var(--warn);
+.aprev {
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
 }
 
-:root:not([data-palette="bw"]) .seat.full {
-  background: var(--bad);
-  border-color: var(--bad);
-  color: #FFFFFF;
+.aprev[hidden],
+.addphoto [hidden] {
+  display: none;
 }

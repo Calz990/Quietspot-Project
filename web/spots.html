@@ -65,26 +65,25 @@
       <select id="fNoise" aria-label="Noise level"><option value="any">Any noise</option><option value="1">Quiet only</option><option value="2">Up to moderate</option></select>
       <select id="fCrowd" aria-label="Crowd level"><option value="any">Any crowd</option><option value="1">Low only</option><option value="2">Up to medium</option></select>
       <select id="fPrice" aria-label="Price"><option value="any">Any price</option><option value="0">Free only</option><option value="50">Up to ₱50</option><option value="100">Up to ₱100</option></select>
-      <select id="fSort" aria-label="Sort by"><option value="near">Nearest</option><option value="quiet">Quietest</option><option value="seats">Most open seats</option></select>
+      <select id="fSort" aria-label="Sort by"><option value="near">Nearest</option><option value="quiet">Quietest</option></select>
     </div>
     <div class="checks">
       <label><input type="checkbox" id="cWifi"> Wi-Fi</label>
       <label><input type="checkbox" id="cOutlets"> Power outlets</label>
-      <label><input type="checkbox" id="cSeats"> Has open seats</label>
       <label><input type="checkbox" id="cOpen"> Open now</label>
       <label><input type="checkbox" id="cSaved"> Saved only</label>
     </div>
     <div class="grid2">
       <div class="card tablewrap">
         <table>
-          <thead><tr><th>Spot</th><th>Distance</th><th>Noise</th><th>Crowd</th><th>Seats</th><th>Price</th><th>Updated</th><th>Action</th></tr></thead>
+          <thead><tr><th>Spot</th><th>Distance</th><th>Noise</th><th>Crowd</th><th>Price</th><th>Updated</th><th>Action</th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
       </div>
       <aside class="card mapcard">
         <h3>Map of nearby spots</h3>
         <svg id="map" viewBox="0 0 100 70" role="group" aria-label="Schematic map of study spots"></svg>
-        <p class="legend">Number = open seats. Faded pins are hidden by your filters. Tap the map to move your location.</p>
+        <p class="legend">Faded pins are hidden by your filters. Tap the map to move your location.</p>
       </aside>
     </div>
   </div>
@@ -113,8 +112,6 @@
     <label class="f full">Landmark or address<input type="text" id="a-addr" maxlength="90"></label>
     <label class="f">Opens<select id="a-open"></select></label>
     <label class="f">Closes<select id="a-close"></select></label>
-    <label class="f">Total seats<input type="number" id="a-cap" value="20"></label>
-    <label class="f">Open seats now<input type="number" id="a-seats" value="10"></label>
     <label class="f">Price in ₱ (0 if free)<input type="number" id="a-price" value="0"></label>
     <label class="f">Wi-Fi speed in Mbps (0 if none)<input type="number" id="a-mbps" value="0"></label>
     <label class="f">Noise level now<select id="a-noise"><option value="1">Quiet</option><option value="2" selected>Moderate</option><option value="3">Loud</option></select></label>
@@ -126,6 +123,14 @@
     </div>
     <label class="f full">Description of the place (optional)<textarea id="a-desc" maxlength="240" rows="2" placeholder="What is it like? Who is it good for?"></textarea></label>
     <label class="f full">House rules (optional)<textarea id="a-rules" maxlength="160" rows="2"></textarea></label>
+    <div class="full">
+      <div class="meta" style="font-weight:700;margin-bottom:6px">Photo of the place (optional)</div>
+      <div class="addphoto">
+        <label class="filebtn"><span id="a-photoLbl">＋ Choose photo</span><input type="file" id="a-photo" accept="image/*"></label>
+        <img id="a-prev" class="aprev" alt="Preview of the chosen photo" hidden>
+        <button type="button" class="btn sm" id="a-photoRm" hidden>Remove</button>
+      </div>
+    </div>
   </div>
   <p class="err" id="addErr" role="alert"></p>
   <div class="foot"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn solid">Add study spot</button></div>

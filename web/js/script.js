@@ -43,13 +43,11 @@ class Facility {
     }
 }
 class StudySpot {
-    #seats = 0;
     constructor(o) {
         Object.assign(this, {
-            id: o.id, name: o.name, address: o.address, x: o.x, y: o.y, hours: o.hours, price: o.price, capacity: o.capacity, rules: o.rules || '', description: o.description || ''
+            id: o.id, name: o.name, address: o.address, x: o.x, y: o.y, hours: o.hours, price: o.price, rules: o.rules || '', description: o.description || ''
         });
         this.facility = new Facility(o.fac);
-        this.seats = o.seats;
         this.noise = o.noise;
         this.crowd = o.crowd;
         this.busy = o.busy || busyCurve(14, 4, 15);
@@ -58,19 +56,10 @@ class StudySpot {
         this.photos = [];
         this.isNew = !!o.isNew;
     }
-    get seats() { return this.#seats; }
-    set seats(v) {
-        if (!Number.isInteger(v))
-            throw new TypeError('Seats must be a whole number.');
-        if (v < 0 || v > this.capacity)
-            throw new RangeError(`Seats must be between 0 and ${this.capacity}.`);
-        this.#seats = v;
-    }
     get kind() { return 'Study spot'; }
     get isOpen() { const h = new Date().getHours(); return h >= this.hours[0] && h < this.hours[1]; }
     priceLabel() { return this.price === 0 ? 'Free' : `₱${this.price}`; }
     extraInfo() { return ''; }
-    checkAvailability() { return this.#seats > 0; }
     addPhoto(p) {
         if (this.photos.length >= 12)
             throw new RangeError('A spot can have up to 12 photos. Remove one to add another.');
@@ -78,9 +67,9 @@ class StudySpot {
     }
     removePhoto(id) { this.photos = this.photos.filter(p => p.id !== id); }
     distance(p) { return Math.round(Math.hypot(this.x - p.x, this.y - p.y) * 18); }
-    updateStatus({ noise, crowd, seats }) { this.seats = seats; this.noise = noise; this.crowd = crowd; this.updatedAt = Date.now(); }
-    syncFrom(r) { this.seats = r.seats; this.noise = r.noise; this.crowd = r.crowd; this.updatedAt = r.ts; }
-    displayInfo() { return `${this.name} (${this.kind}): ${this.#seats}/${this.capacity} seats, ${NOISE[this.noise]} noise, ${CROWD[this.crowd]} crowd. ${this.extraInfo()}`.trim(); }
+    updateStatus({ noise, crowd }) { this.noise = noise; this.crowd = crowd; this.updatedAt = Date.now(); }
+    syncFrom(r) { this.noise = r.noise; this.crowd = r.crowd; this.updatedAt = r.ts; }
+    displayInfo() { return `${this.name} (${this.kind}): ${NOISE[this.noise]} noise, ${CROWD[this.crowd]} crowd. ${this.extraInfo()}`.trim(); }
     bestTime() {
         const nowH = new Date().getHours(), start = Math.max(this.hours[0], Math.min(Math.max(nowH, 8), 20));
         let best = null;
@@ -104,7 +93,7 @@ class Library extends StudySpot {
 class StudyRoom extends StudySpot {
     get kind() { return 'Study room'; }
     priceLabel() { return this.price === 0 ? 'Free' : `₱${this.price} per hour`; }
-    extraInfo() { return 'Room-based seating.'; }
+    extraInfo() { return ''; }
 }
 class CoworkingSpace extends StudySpot {
     get kind() { return 'Co-working space'; }
@@ -175,7 +164,6 @@ const state = {
         sort: 'near',
         wifi: false, 
         outlets: false, 
-        seats: false, 
         open: false, 
         saved: false
     }
@@ -210,10 +198,6 @@ async function loadSpotsFromJava() {
                     aircon: !!fac.aircon,
                     food: !!fac.food
                 },
-
-                //temp values seats *to be moved to backend*
-                capacity: 30,
-                seats: 10,
                 updatedAt: Date.now()
             };
 
@@ -293,13 +277,6 @@ function meter(lv, label, big) {
         b += `<i class="${i <= lv ? 'on' : ''}" style="height:${(big ? 10 : 6) + i * (big ? 6 : 4)}px"></i>`;
     return `<span class="meter lv${lv} ${big ? 'big' : ''}" role="img" aria-label="${label}">${b}</span>`;
 }
-function seatPill(s) {
-    if (s.seats === 0)
-        return '<span class="seat full">Full</span>';
-    if (s.seats / s.capacity <= 0.2)
-        return `<span class="seat low">${s.seats} left</span>`;
-    return `<span class="seat">${s.seats} open</span>`;
-}
 function renderChip() { $('whoChip').textContent = `${user.userName}, ${user.points} pts`; }
 
 // Which file each page name opens. Navigation now opens another HTML file.
@@ -332,14 +309,12 @@ function filtered() {
     const list = spots.filter(s => (!f.q || (s.name + ' ' + s.kind).toLowerCase().includes(f.q.toLowerCase())) &&
         (f.noise === 'any' || s.noise <= +f.noise) && (f.crowd === 'any' || s.crowd <= +f.crowd) &&
         (f.price === 'any' || s.price <= +f.price) && (!f.wifi || s.facility.wifi) && (!f.outlets || s.facility.outlets) &&
-        (!f.seats || s.checkAvailability()) && (!f.open || s.isOpen) && (!f.saved || user.favoriteSpots.has(s.id)));
+        (!f.open || s.isOpen) && (!f.saved || user.favoriteSpots.has(s.id)));
     const p = state.pos;
     if (f.sort === 'near')
         list.sort((a, b) => a.distance(p) - b.distance(p));
     if (f.sort === 'quiet')
         list.sort((a, b) => (a.noise - b.noise) || (a.crowd - b.crowd));
-    if (f.sort === 'seats')
-        list.sort((a, b) => b.seats - a.seats);
     return list;
 }
 function readFilters() {
@@ -351,7 +326,6 @@ function readFilters() {
     f.sort = $('fSort').value;
     f.wifi = $('cWifi').checked;
     f.outlets = $('cOutlets').checked;
-    f.seats = $('cSeats').checked;
     f.open = $('cOpen').checked;
     f.saved = $('cSaved').checked;
     renderRows();
@@ -362,13 +336,13 @@ function clearFilters() {
     $('q').value = '';
     ['fNoise', 'fCrowd', 'fPrice'].forEach(i => $(i).value = 'any');
     $('fSort').value = 'near';
-    ['cWifi', 'cOutlets', 'cSeats', 'cOpen', 'cSaved'].forEach(i => $(i).checked = false);
+    ['cWifi', 'cOutlets', 'cOpen', 'cSaved'].forEach(i => $(i).checked = false);
     readFilters();
 }
 function renderHome() {
     if (!$('waiting')) return;
-    const n = spots.filter(s => s.checkAvailability()).length;
-    $('waiting').innerHTML = `<b>${n}</b> ${n === 1 ? 'spot has' : 'spots have'} open seats right now`;
+    const n = spots.filter(s => s.noise === 1).length;
+    $('waiting').innerHTML = `<b>${n}</b> ${n === 1 ? 'spot is' : 'spots are'} quiet right now`;
 }
 function renderRows() {
     if (!$('rows')) return;
@@ -380,13 +354,13 @@ function renderRows() {
       <td>${walk(d)}<small>${d} m</small></td>
       <td><span class="lv">${meter(s.noise, NOISE[s.noise] + ' noise')} ${NOISE[s.noise]}</span></td>
       <td><span class="lv">${meter(s.crowd, CROWD[s.crowd] + ' crowd')} ${CROWD[s.crowd]}</span></td>
-      <td>${seatPill(s)}</td><td>${esc(s.priceLabel())}</td><td>${ago(s.updatedAt)}</td>
+      <td>${esc(s.priceLabel())}</td><td>${ago(s.updatedAt)}</td>
       <td><div class="acts">
         <button class="btn sm" data-act="view" data-id="${s.id}" aria-label="View ${esc(s.name)}">View</button>
         <button class="btn sm" data-act="report" data-id="${s.id}" aria-label="Report status of ${esc(s.name)}">Report</button>
         <button class="btn sm star" data-act="fav" data-id="${s.id}" aria-pressed="${fav}" aria-label="${fav ? 'Remove from favorites' : 'Save to favorites'}">${fav ? '★' : '☆'}</button>
       </div></td></tr>`;
-    }).join('') : `<tr><td colspan="8" class="empty">No spots match these filters. <button class="btn sm" data-act="clear">Clear filters</button></td></tr>`;
+    }).join('') : `<tr><td colspan="7" class="empty">No spots match these filters. <button class="btn sm" data-act="clear">Clear filters</button></td></tr>`;
 }
 function renderMap() {
     if (!$('map')) return;
@@ -395,10 +369,9 @@ function renderMap() {
     g += `<path d="M0 44 L100 40 M30 0 L34 70 M68 0 L72 70" stroke="var(--line)" stroke-width="2.4" fill="none"/>`;
     spots.forEach(s => {
         const sel = s.id === state.sel;
-        g += `<g class="pin" data-act="view" data-id="${s.id}" tabindex="0" role="button" opacity="${match.has(s.id) ? 1 : .25}" aria-label="${esc(s.name)}, ${s.seats} seats open">
+        g += `<g class="pin" data-act="view" data-id="${s.id}" tabindex="0" role="button" opacity="${match.has(s.id) ? 1 : .25}" aria-label="${esc(s.name)}">
       <circle cx="${s.x}" cy="${s.y}" r="4.6" fill="var(--ink)" stroke="var(--surface)" stroke-width="1"/>
-      ${sel ? `<circle cx="${s.x}" cy="${s.y}" r="7" fill="none" stroke="var(--ink)" stroke-width=".7"/>` : ''}
-      <text x="${s.x}" y="${s.y + 1.2}" text-anchor="middle" font-size="3.4" font-weight="700" fill="var(--on-ink)">${s.seats}</text></g>`;
+      ${sel ? `<circle cx="${s.x}" cy="${s.y}" r="7" fill="none" stroke="var(--ink)" stroke-width=".7"/>` : ''}</g>`;
     });
     const p = state.pos;
     g += `<g aria-label="Your location"><rect x="${p.x - 2.4}" y="${p.y - 2.4}" width="4.8" height="4.8" transform="rotate(45 ${p.x} ${p.y})" fill="var(--surface)" stroke="var(--ink)" stroke-width="1"/><text x="${p.x}" y="${p.y + 7}" text-anchor="middle" font-size="2.8" font-weight="700" fill="var(--ink)" stroke="var(--surface2)" stroke-width="1" paint-order="stroke">You</text></g>`;
@@ -420,12 +393,12 @@ function busyBars(s) {
     return s.busy.map((v, i) => { const h = 8 + i; return `<div class="${h === nowH ? 'now' : ''}" title="${fmtHour(h)}: ${v}% busy"><b style="height:${Math.max(6, v * .72)}px"></b><span>${i % 2 === 0 ? shortHour(h) : ' '}</span></div>`; }).join('');
 }
 function renderStats() {
-    const quiet = spots.filter(s => s.noise === 1).length, open = spots.filter(s => s.checkAvailability()).length;
+    const quiet = spots.filter(s => s.noise === 1).length;
     let verified = 0;
     spots.forEach(s => s.reports.forEach(r => { if (r.net() >= 3)
         verified++; }));
     $('stats').innerHTML = [
-        ['Total spots', spots.length], ['Quiet right now', quiet], ['With open seats', open], ['Verified reports', verified]
+        ['Total spots', spots.length], ['Quiet right now', quiet], ['Verified reports', verified]
     ].map(([t, v]) => `<div class="card stat"><span>${t}</span><b>${v}</b></div>`).join('');
 }
 function renderProfilePanel() {
@@ -447,7 +420,6 @@ function renderProfilePanel() {
       <dt>Rules</dt><dd>${s.rules ? esc(s.rules) : 'None listed'}</dd>
     </dl>
     <div class="status">
-      <div><div class="lbl">Open seats</div><div class="val">${s.seats} <small>of ${s.capacity}</small></div></div>
       <div><div class="lbl">Noise level</div><div class="val">${meter(s.noise, NOISE[s.noise], true)} ${NOISE[s.noise]}</div></div>
       <div><div class="lbl">Crowd level</div><div class="val">${meter(s.crowd, CROWD[s.crowd], true)} ${CROWD[s.crowd]}</div></div>
     </div>
@@ -483,7 +455,7 @@ function renderVerify() {
     </div>
     <div class="vlist">${list.length ? list.map(({ s, r }) => `<div class="report"><div>
       <p><strong>${esc(s.name)}</strong> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span></p>
-      <p class="meta">${esc(r.mine ? user.userName + ' (you)' : r.user)}: ${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd, ${r.seats} open seats, ${ago(r.ts)}</p>
+      <p class="meta">${esc(r.mine ? user.userName + ' (you)' : r.user)}: ${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd, ${ago(r.ts)}</p>
       ${r.note ? `<p>${esc(r.note)}</p>` : ''}</div>
       <div class="votes" aria-label="Is this report accurate?">
         <button data-act="vote" data-id="${r.id}" data-dir="1" aria-pressed="${r.myVote === 1}" aria-label="Upvote, report is accurate" ${r.mine ? 'disabled' : ''}>▲</button>
@@ -553,7 +525,6 @@ function renderTop() {
       <button class="btn sm solid" data-act="report" data-id="${s.id}">Report status</button></div>
     </div>
     <div class="status" aria-live="polite">
-      <div><div class="lbl">Open seats</div><div class="val">${s.seats} <small>of ${s.capacity}</small></div></div>
       <div><div class="lbl">Noise level</div><div class="val">${meter(s.noise, NOISE[s.noise], true)} ${NOISE[s.noise]}</div></div>
       <div><div class="lbl">Crowd level</div><div class="val">${meter(s.crowd, CROWD[s.crowd], true)} ${CROWD[s.crowd]}</div></div>
       <div><div class="lbl">Price</div><div class="val" style="font-size:1.05rem">${esc(s.priceLabel())}</div><div class="lbl">Updated ${ago(s.updatedAt)}</div></div>
@@ -575,7 +546,7 @@ function renderReports() {
     $('dReports').innerHTML = `<h3 class="sec" style="margin-top:22px">Recent reports</h3>` +
         (s.reports.length ? s.reports.map(r => `<div class="report"><div>
       <p><strong>${esc(r.user)}${r.mine ? ' (you)' : ''}</strong> <span class="meta">${ago(r.ts)}</span></p>
-      <p class="meta">${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd, ${r.seats} open seats</p>${r.note ? `<p>${esc(r.note)}</p>` : ''}</div>
+      <p class="meta">${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd</p>${r.note ? `<p>${esc(r.note)}</p>` : ''}</div>
       <div class="votes" aria-label="Is this report accurate?">
         <button data-act="vote" data-id="${r.id}" data-dir="1" aria-pressed="${r.myVote === 1}" aria-label="Upvote, report is accurate" ${r.mine ? 'disabled' : ''}>▲</button>
         <span>${r.net()}</span>
@@ -599,6 +570,31 @@ function renderPhotos(keepErr) {
     </div>
     <p class="err" id="phErr" role="alert">${esc(prevErr)}</p>`;
 }
+// Photo chosen in the Add spot form (kept until the spot is saved)
+let addPhotoSrc = null;
+function resetAddPhoto() {
+    addPhotoSrc = null;
+    if ($('a-photo')) $('a-photo').value = '';
+    if ($('a-prev')) { $('a-prev').hidden = true; $('a-prev').removeAttribute('src'); }
+    if ($('a-photoRm')) $('a-photoRm').hidden = true;
+    if ($('a-photoLbl')) $('a-photoLbl').textContent = '＋ Choose photo';
+}
+async function pickAddPhoto(file) {
+    const err = $('addErr');
+    try {
+        addPhotoSrc = await loadImage(file);
+        $('a-prev').src = addPhotoSrc;
+        $('a-prev').hidden = false;
+        $('a-photoRm').hidden = false;
+        $('a-photoLbl').textContent = 'Change photo';
+        if (err) err.textContent = '';
+    }
+    catch (ex) {
+        resetAddPhoto();
+        if (err) err.textContent = ex.message;
+    }
+}
+on('a-photoRm', 'click', resetAddPhoto);
 function loadImage(file) {
     return new Promise((resolve, reject) => {
         if (!file.type.startsWith('image/'))
@@ -659,7 +655,6 @@ function openReport(id) {
     <div class="fgrid">
       <div><div class="meta" style="margin-bottom:6px;font-weight:700">Noise</div><div class="seg" role="radiogroup" aria-label="Noise">${[1, 2, 3].map(n => `<label><input type="radio" name="r-noise" value="${n}" ${n === s.noise ? 'checked' : ''}><span>${NOISE[n]}</span></label>`).join('')}</div></div>
       <div><div class="meta" style="margin-bottom:6px;font-weight:700">Crowd</div><div class="seg" role="radiogroup" aria-label="Crowd">${[1, 2, 3].map(n => `<label><input type="radio" name="r-crowd" value="${n}" ${n === s.crowd ? 'checked' : ''}><span>${CROWD[n]}</span></label>`).join('')}</div></div>
-      <label class="f">Open seats (0 to ${s.capacity})<input type="number" id="r-seats" value="${s.seats}"></label>
       <label class="f">Note (optional)<input type="text" id="r-note" maxlength="100" placeholder="e.g. Outlets near the window are free"></label>
     </div>
     <p class="err" id="repErr" role="alert"></p>
@@ -674,7 +669,6 @@ on('reportForm', 'submit', async e => {
 
     const noiseEl = document.querySelector('input[name="r-noise"]:checked');
     const crowdEl = document.querySelector('input[name="r-crowd"]:checked');
-    const seatsEl = $('r-seats');
     const noteEl  = $('r-note');
     const errEl   = $('repErr');
 
@@ -687,13 +681,7 @@ on('reportForm', 'submit', async e => {
 
     const noise = +noiseEl.value;
     const crowd = +crowdEl.value;
-    const seats = seatsEl ? Number(seatsEl.value) : s.seats;
     const note  = noteEl ? noteEl.value.trim() : '';
-
-    if (!Number.isInteger(seats) || seats < 0 || seats > s.capacity) {
-        if (errEl) errEl.textContent = `Open seats must be between 0 and ${s.capacity}.`;
-        return;
-    }
 
     try {
         const res = await fetch('/api/report', {
@@ -721,7 +709,7 @@ on('reportForm', 'submit', async e => {
             id: rid++,
             spotId: s.id,
             user: user.userName,
-            noise, crowd, seats, note,
+            noise, crowd, note,
             ts: Date.now(),
             up: 0, down: 0, mine: true
         });
@@ -729,16 +717,14 @@ on('reportForm', 'submit', async e => {
 
         // Average all reports for this spot
         if (s.reports.length > 0) {
-            let noiseSum = 0, crowdSum = 0, seatsSum = 0;
+            let noiseSum = 0, crowdSum = 0;
             s.reports.forEach(r => {
                 noiseSum += r.noise;
                 crowdSum += r.crowd;
-                seatsSum += (r.seats ?? s.seats);
             });
             const count = s.reports.length;
             s.noise = Math.round(noiseSum / count);
             s.crowd = Math.round(crowdSum / count);
-            s.seats = Math.round(seatsSum / count);
         }
         s.updatedAt = Date.now();
 
@@ -778,18 +764,10 @@ on('addForm', 'submit', async e => {
         if (close <= open)
             throw new Error('Closing time must be later than opening time.');
 
-        const cap = Number($('a-cap').value);
-        if (!Number.isInteger(cap) || cap < 1)
-            throw new Error('Total seats must be a whole number of at least 1.');
-
         const price = Number($('a-price').value);
         const mbps  = Number($('a-mbps').value);
         if (!(price >= 0)) throw new Error('Price cannot be negative.');
         if (!(mbps  >= 0)) throw new Error('Wi-Fi speed cannot be negative.');
-
-        const seats = Number($('a-seats').value);
-        if (!Number.isInteger(seats) || seats < 0 || seats > cap)
-            throw new Error(`Open seats must be between 0 and ${cap}.`);
 
         const spotType = $('a-type').value;
         const address  = $('a-addr').value.trim() || 'Location pinned on the map';
@@ -835,8 +813,6 @@ on('addForm', 'submit', async e => {
             name, address, x, y,
             hours: [open, close],
             price,
-            capacity: cap,
-            seats,
             noise, crowd,
             rules, description,
             isNew: true,
@@ -847,10 +823,19 @@ on('addForm', 'submit', async e => {
             }
         });
 
+        // Attach the chosen photo (if any) to the new spot
+        if (addPhotoSrc) {
+            spot.addPhoto(new Photo({
+                id: pid++, user: user.userName, mine: true, src: addPhotoSrc, caption: name, ts: Date.now()
+            }));
+            user.photosAdded++;
+        }
+
         spots.push(spot);
         user.spotsAdded++;
 
         $('addForm').reset();
+        resetAddPhoto();
         fillHours();
         $('dlgAdd').close();
         clearFilters();
@@ -924,6 +909,7 @@ document.addEventListener('click', e => {
     if (act === 'go-add') {
     if ($('dlgAdd')) {
         $('addErr').textContent = '';
+        resetAddPhoto();
         fillHours();
         $('dlgAdd').showModal();
     }
@@ -973,12 +959,14 @@ if ($('map')) $('map').addEventListener('click', e => {
     toast('Location updated. Distances recalculated.');
 });
 [
-    'q', 'fNoise', 'fCrowd', 'fPrice', 'fSort', 'cWifi', 'cOutlets', 'cSeats', 'cOpen', 'cSaved'
+    'q', 'fNoise', 'fCrowd', 'fPrice', 'fSort', 'cWifi', 'cOutlets', 'cOpen', 'cSaved'
 ].forEach(i => on(i, i === 'q' ? 'input' : 'change', readFilters));
 document.addEventListener('change', e => {
     const id = e.target.id;
     if (id === 'ph-file' && e.target.files[0])
         uploadPhoto(e.target.files[0]);
+    if (id === 'a-photo' && e.target.files[0])
+        pickAddPhoto(e.target.files[0]);
     if (id === 'dSpotSel') {
         state.dashSpot = +e.target.value;
         renderProfilePanel();
@@ -1028,7 +1016,7 @@ function soc(s) {
         const h = hsh(s), count = 18 + h % 60, avg = 3.8 + (h % 11) / 10;
         const names = ['Mika', 'Jen', 'Paolo', 'Ana', 'Rico', 'Lea'];
         const lines = [
-            'Tahimik dito, sakto pang review.', 'Maraming outlet, pero minsan puno na pag hapon.', 'Okay ang Wi-Fi at malamig ang aircon.', 'Sulit, at mabilis ang update ng seats.', 'Medyo maingay pag lunch break.', 'Maganda pumunta bago mag 10 am.'
+            'Tahimik dito, sakto pang review.', 'Maraming outlet, pero minsan puno na pag hapon.', 'Okay ang Wi-Fi at malamig ang aircon.', 'Sulit, at mabilis ang update ng mga reports.', 'Medyo maingay pag lunch break.', 'Maganda pumunta bago mag 10 am.'
         ];
         social[s.id] = {
             sum: Math.round(avg * count), count, mine: 0, open: false, draft: '',
@@ -1064,7 +1052,7 @@ function renderFeed() {
     if (!$('feed')) return;
     const q = $('fq').value.trim().toLowerCase(), so = $('fsort').value, quiet = $('fquiet').checked, rt = x => soc(x).sum / soc(x).count;
     const list = spots.filter(s => (!q || (s.name + ' ' + s.kind).toLowerCase().includes(q)) && (!quiet || s.noise === 1));
-    list.sort(so === 'rated' ? (a, b) => rt(b) - rt(a) : so === 'seats' ? (a, b) => b.seats - a.seats : (a, b) => a.distance(state.pos) - b.distance(state.pos));
+    list.sort(so === 'rated' ? (a, b) => rt(b) - rt(a) : (a, b) => a.distance(state.pos) - b.distance(state.pos));
     if (!list.length) {
         $('feed').innerHTML = '<div class="empty">No spots match your search.</div>';
         return;
@@ -1078,7 +1066,7 @@ function renderFeed() {
         return `<article class="card post">
       <header><span class="av">${esc(s.name[0])}</span><div><h3>${esc(s.name)}</h3><small>${esc(s.kind)}${s.isOpen ? '' : ', closed now'} · ${Math.max(1, Math.round(d / 60))} min walk (${d} m)</small></div>${s.isNew ? '<span class="tag solid">New</span>' : ''}</header>
       <button class="pic" data-act="view" data-id="${s.id}" aria-label="Open details of ${esc(s.name)}"><img src="${img}" alt="${real ? 'Photo' : 'Illustration'} of ${esc(s.name)}">${real ? '' : '<span class="cap">Illustration · open the spot to add a real photo</span>'}</button>
-      <div class="stat"><span class="lv">${meter(s.noise, NOISE[s.noise] + ' noise')} ${NOISE[s.noise]}</span><span class="lv">${meter(s.crowd, CROWD[s.crowd] + ' crowd')} ${CROWD[s.crowd]} crowd</span>${seatPill(s)}${extra(s)}<small>Updated ${ago(s.updatedAt)}</small></div>
+      <div class="stat"><span class="lv">${meter(s.noise, NOISE[s.noise] + ' noise')} ${NOISE[s.noise]}</span><span class="lv">${meter(s.crowd, CROWD[s.crowd] + ' crowd')} ${CROWD[s.crowd]} crowd</span>${extra(s)}<small>Updated ${ago(s.updatedAt)}</small></div>
       <div class="rate"><span class="stars" role="group" aria-label="Rating">${stars}</span><b>${avg.toFixed(1)}</b><small>(${sc.count} ratings)${sc.mine ? ', you rated ' + sc.mine : ''}</small></div>
       <div class="acts"><button class="btn sm" data-act="cm-toggle" data-id="${s.id}">Comments (${sc.comments.length})</button><button class="btn sm" data-act="report" data-id="${s.id}">Report status</button><button class="btn sm" data-act="feed-photo" data-id="${s.id}">Add photo</button><button class="btn sm" data-act="share" data-id="${s.id}">Share</button><button class="btn sm" data-act="fav" data-id="${s.id}" aria-pressed="${fav}">${fav ? '★ Saved' : '☆ Save'}</button><button class="btn sm solid" data-act="view" data-id="${s.id}">Details</button></div>
       ${cms}</article>`;
@@ -1152,7 +1140,7 @@ document.addEventListener('click', e => {
         fp.click();
     }
     if (a === 'share') {
-        const t = `${s.name}: ${s.seats} seats open, ${NOISE[s.noise]} noise right now (QuietSpot)`;
+        const t = `${s.name}: ${NOISE[s.noise]} noise right now (QuietSpot)`;
         try {
             navigator.clipboard.writeText(t).then(() => toast('Copied: ' + t), () => toast(t));
         }
@@ -1180,7 +1168,7 @@ document.addEventListener('click', e => {
 // =====================================================
 
 const RC = [
-    ['quiet', 'Quiet', 1], ['outlets', 'Power outlets', 1], ['wifi', 'Wi-Fi'], ['aircon', 'Air-conditioning'], ['cheap', 'Free or cheap'], ['open', 'Open now'], ['seats', 'Has open seats']
+    ['quiet', 'Quiet', 1], ['outlets', 'Power outlets', 1], ['wifi', 'Wi-Fi'], ['aircon', 'Air-conditioning'], ['cheap', 'Free or cheap'], ['open', 'Open now']
 ];
 if ($('recoChecks')) $('recoChecks').innerHTML = RC.map(r => `<label><input type="checkbox" value="${r[0]}" ${r[2] ? 'checked' : ''}> ${r[1]}</label>`).join('');
 on('recoChecks', 'change', renderReco);
@@ -1188,14 +1176,14 @@ function renderReco() {
     if (!$('recoOut')) return;
     const pick = [...document.querySelectorAll('#recoChecks input:checked')].map(x => x.value);
     const T = {
-        quiet: s => s.noise === 1, outlets: s => s.facility.outlets, wifi: s => s.facility.wifi, aircon: s => s.facility.aircon, cheap: s => s.price <= 50, open: s => s.isOpen, seats: s => s.checkAvailability()
+        quiet: s => s.noise === 1, outlets: s => s.facility.outlets, wifi: s => s.facility.wifi, aircon: s => s.facility.aircon, cheap: s => s.price <= 50, open: s => s.isOpen
     };
     if (!pick.length) {
         $('recoOut').innerHTML = '<div class="empty">Tick at least one need above.</div>';
         return;
     }
     const r = spots.map(s => ({ s, hit: pick.filter(p => T[p](s)) })).sort((a, b) => b.hit.length - a.hit.length || a.s.distance(state.pos) - b.s.distance(state.pos));
-    $('recoOut').innerHTML = r.slice(0, 5).map(({ s, hit }, n) => { const pc = Math.round(hit.length / pick.length * 100); return `<article class="card post rcard"><div class="stat"><b>#${n + 1} ${esc(s.name)}</b><span class="chip">${pc}% match</span>${seatPill(s)}<small>${s.distance(state.pos)} m away</small></div><div class="match"><i style="width:${pc}%"></i></div><p class="sub" style="margin:8px 0 10px">Matches: ${hit.map(h => RC.find(x => x[0] === h)[1]).join(', ') || 'none'}</p><button class="btn sm solid" data-act="view" data-id="${s.id}">Details</button></article>`; }).join('');
+    $('recoOut').innerHTML = r.slice(0, 5).map(({ s, hit }, n) => { const pc = Math.round(hit.length / pick.length * 100); return `<article class="card post rcard"><div class="stat"><b>#${n + 1} ${esc(s.name)}</b><span class="chip">${pc}% match</span><small>${s.distance(state.pos)} m away</small></div><div class="match"><i style="width:${pc}%"></i></div><p class="sub" style="margin:8px 0 10px">Matches: ${hit.map(h => RC.find(x => x[0] === h)[1]).join(', ') || 'none'}</p><button class="btn sm solid" data-act="view" data-id="${s.id}">Details</button></article>`; }).join('');
 }
 
 // =====================================================
@@ -1306,8 +1294,8 @@ function save() {
         },
         spots: spots.map(s => ({
             id: s.id, type: s.constructor.name, isNew: s.isNew, name: s.name, address: s.address, x: s.x, y: s.y, hours: s.hours,
-            price: s.price, capacity: s.capacity, rules: s.rules, description: s.description, fac: { ...s.facility },
-            seats: s.seats, noise: s.noise, crowd: s.crowd, busy: s.busy, updatedAt: s.updatedAt, reports: s.reports, photos: s.photos
+            price: s.price, rules: s.rules, description: s.description, fac: { ...s.facility },
+            noise: s.noise, crowd: s.crowd, busy: s.busy, updatedAt: s.updatedAt, reports: s.reports, photos: s.photos
         }))
     };
     try {
@@ -1342,10 +1330,9 @@ function loadState() {
                 s = new (TYPES[o.type] || StudySpot)({ ...o, fac: o.fac });
                 spots.push(s);
             }
-            s.seats = o.seats;
             Object.assign(s, { noise: o.noise, crowd: o.crowd, updatedAt: o.updatedAt, busy: o.busy || s.busy });
             s.reports = (o.reports || []).map(r => new Report(r));
-            s.photos = (o.photos || []).map(p => new Photo(p));
+            if (o.photos && o.photos.length) s.photos = o.photos.map(p => new Photo(p));
         });
     }
     catch (e) { console.warn('Could not restore saved data', e); }
@@ -1360,6 +1347,7 @@ window.addEventListener('pagehide', save);
 loadState();
 loadSpotsFromJava().then(ok => {
     if (!ok) return;
+    loadState();   // restore saved photos, reports and added spots AFTER the spots are loaded from Java
     document.querySelectorAll('nav.main .pill').forEach(b =>
         b.setAttribute('aria-current', b.dataset.page === CURRENT ? 'page' : 'false')
     );
@@ -1388,6 +1376,7 @@ loadSpotsFromJava().then(ok => {
         if (flash) toast(flash);
         if (wantAdd && $('dlgAdd') && loggedIn) {
             $('addErr').textContent = '';
+            resetAddPhoto();
             fillHours();
             $('dlgAdd').showModal();
         }

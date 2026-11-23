@@ -58,7 +58,7 @@
   <div class="wrap feedwrap">
     <div class="head"><div><h2>Find a spot</h2><p>Scroll through study spots with photos, live status, ratings, and student feedback</p></div>
       <button class="btn" data-act="go" data-page="spots">Table and map view</button></div>
-    <div class="filters"><label class="search"><input type="text" id="fq" placeholder="Search by name or type" aria-label="Search spots"></label><select id="fsort" aria-label="Sort"><option value="near">Nearest</option><option value="rated">Top rated</option><option value="seats">Most seats</option></select><label class="jtoggle"><input type="checkbox" id="fquiet"> Quiet only</label></div>
+    <div class="filters"><label class="search"><input type="text" id="fq" placeholder="Search by name or type" aria-label="Search spots"></label><select id="fsort" aria-label="Sort"><option value="near">Nearest</option><option value="rated">Top rated</option></select><label class="jtoggle"><input type="checkbox" id="fquiet"> Quiet only</label></div>
     <div id="feed" class="feed"></div>
   </div>
 </section>
@@ -86,8 +86,6 @@
     <label class="f full">Landmark or address<input type="text" id="a-addr" maxlength="90"></label>
     <label class="f">Opens<select id="a-open"></select></label>
     <label class="f">Closes<select id="a-close"></select></label>
-    <label class="f">Total seats<input type="number" id="a-cap" value="20"></label>
-    <label class="f">Open seats now<input type="number" id="a-seats" value="10"></label>
     <label class="f">Price in ₱ (0 if free)<input type="number" id="a-price" value="0"></label>
     <label class="f">Wi-Fi speed in Mbps (0 if none)<input type="number" id="a-mbps" value="0"></label>
     <label class="f">Noise level now<select id="a-noise"><option value="1">Quiet</option><option value="2" selected>Moderate</option><option value="3">Loud</option></select></label>
@@ -99,6 +97,14 @@
     </div>
     <label class="f full">Description of the place (optional)<textarea id="a-desc" maxlength="240" rows="2" placeholder="What is it like? Who is it good for?"></textarea></label>
     <label class="f full">House rules (optional)<textarea id="a-rules" maxlength="160" rows="2"></textarea></label>
+    <div class="full">
+      <div class="meta" style="font-weight:700;margin-bottom:6px">Photo of the place (optional)</div>
+      <div class="addphoto">
+        <label class="filebtn"><span id="a-photoLbl">＋ Choose photo</span><input type="file" id="a-photo" accept="image/*"></label>
+        <img id="a-prev" class="aprev" alt="Preview of the chosen photo" hidden>
+        <button type="button" class="btn sm" id="a-photoRm" hidden>Remove</button>
+      </div>
+    </div>
   </div>
   <p class="err" id="addErr" role="alert"></p>
   <div class="foot"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn solid">Add study spot</button></div>
