@@ -109,26 +109,23 @@ class Report {
     net() { return this.up - this.down; }
 }
 class User {
-    constructor(name, type) { this.userName = name; this.userType = type; this.points = 20; this.favoriteSpots = new Set(); this.reportsMade = 0; this.spotsAdded = 0; this.photosAdded = 0; }
+    constructor(name, type) { this.userName = name; this.userType = type; this.points = 20; this.favoriteSpots = new Set(); this.reportsMade = 0; this.spotsAdded = 0; this.photosAdded = 0; this.streak = 0; this.bestStreak = 0; }
     toggleFavorite(id) { if (this.favoriteSpots.has(id)) {
         this.favoriteSpots.delete(id);
         return false;
     } this.favoriteSpots.add(id); return true; }
     badges() {
+        // have/need drive the progress bar on locked badges in the shelf
+        const b = (id, name, desc, icon, have, need) => ({ id, name, desc, icon, have: Math.min(have, need), need, earned: have >= need });
         return [
-            { name: 'First report', desc: 'Send your first update', earned: this.reportsMade >= 1 },
-            {
-                name: 'Spot scout', desc: 'Add a new study spot', earned: this.spotsAdded >= 1
-            },
-            {
-                name: 'Photographer', desc: 'Share a photo of a spot', earned: this.photosAdded >= 1
-            },
-            {
-                name: 'Trusted reporter', desc: 'Reach 50 points', earned: this.points >= 50
-            },
-            {
-                name: 'Favorites fan', desc: 'Save 3 favorite spots', earned: this.favoriteSpots.size >= 3
-            }
+            b('first', 'First report', 'Send your first update', 'chat', this.reportsMade, 1),
+            b('scout', 'Spot scout', 'Add a new study spot', 'pin', this.spotsAdded, 1),
+            b('photo', 'Photographer', 'Share a photo of a spot', 'camera', this.photosAdded, 1),
+            b('fans', 'Favorites fan', 'Save 3 favorite spots', 'star', this.favoriteSpots.size, 3),
+            b('trusted', 'Trusted reporter', 'Reach 50 points', 'shield', this.points, 50),
+            b('century', 'Century club', 'Reach 100 points', 'gem', this.points, 100),
+            b('roll', 'On a roll', 'Be active 3 days in a row', 'flame', this.bestStreak, 3),
+            b('week', 'Week warrior', 'Be active 7 days in a row', 'bolt', this.bestStreak, 7)
         ];
     }
 }
@@ -156,6 +153,7 @@ const state = {
         },
     sel: null,
     dashSpot: null,
+    ver: { spot: 'all', show: 'all' },   // Community verification filters on the dashboard
     f: {
         q: '', 
         noise: 'any', 
@@ -263,11 +261,10 @@ $('themeBtn').addEventListener('click', () => applyTheme(document.documentElemen
 applyTheme(document.documentElement.getAttribute('data-theme'));
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3000); }
 function award(n, why) {
-    const before = user.badges().filter(b => b.earned).length;
     user.points += n;
-    const after = user.badges().filter(b => b.earned).length;
-    toast(`+${n} points: ${why}` + (after > before ? '. New badge unlocked!' : ''));
-    renderChip();
+    track(n);          // counts toward today's streak and this week's leaderboard
+    toast(`+${n} points: ${why}`);
+    gameSync();        // unlock popups for new badges or levels
     renderDash();
     save();
 }
@@ -277,7 +274,25 @@ function meter(lv, label, big) {
         b += `<i class="${i <= lv ? 'on' : ''}" style="height:${(big ? 10 : 6) + i * (big ? 6 : 4)}px"></i>`;
     return `<span class="meter lv${lv} ${big ? 'big' : ''}" role="img" aria-label="${label}">${b}</span>`;
 }
-function renderChip() { $('whoChip').textContent = `${user.userName}, ${user.points} pts`; }
+function renderChip() {
+    const c = $('whoChip');
+    if (!c) return;
+    if (!loggedIn) { c.textContent = `${user.userName}, ${user.points} pts`; c.classList.remove('rich'); return; }
+    const L = levelOf(user.points), g = G(), done = g.last === dayKey(new Date());
+    c.classList.add('rich');
+    c.style.setProperty('--p', L.pct + '%');
+    c.setAttribute('role', 'button');
+    c.tabIndex = 0;
+    c.title = L.next ? `${L.toNext} points to ${L.next.n}. Open your dashboard.` : 'Top level reached. Open your dashboard.';
+    c.setAttribute('aria-label', `${user.userName}, level ${L.idx + 1} ${L.cur.n}, ${g.streak} day streak, ${user.points} points. Open dashboard.`);
+    c.innerHTML = `<span class="who">${esc(user.userName)}</span><span class="lvl">Lv ${L.idx + 1}</span><span class="sk ${done ? '' : 'idle'}">${icon('flame')}${g.streak}</span><span>${user.points} pts</span>`;
+    if (!c.dataset.bound) {
+        c.dataset.bound = '1';
+        const open = () => { if (CURRENT !== 'dash') go('dash'); };
+        c.addEventListener('click', open);
+        c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+    }
+}
 
 // Which file each page name opens. Navigation now opens another HTML file.
 const PAGE_FILES = {
@@ -379,14 +394,158 @@ function renderMap() {
 }
 
 // =====================================================
+// game.js: Levels, daily streaks, badge unlocks,
+// the weekly leaderboard, and the unlock popup.
+// Streaks and weekly points are kept per username in
+// this browser (localStorage key "qs-game-v1").
+// =====================================================
+
+const GAME_KEY = 'qs-game-v1';
+const LEVELS = [
+    { n: 'Newcomer', min: 0 }, { n: 'Contributor', min: 30 }, { n: 'Trusted reporter', min: 50 },
+    { n: 'Campus guide', min: 100 }, { n: 'Spot expert', min: 175 }, { n: 'QuietSpot legend', min: 300 }
+];
+const RIVALS = ['Mika', 'Paolo', 'Jen', 'Ria', 'Ana', 'Rico'];   // sample students for the weekly board
+const STREAK_MARKS = [3, 7, 14, 30];
+const ICONS = {
+    chat: '<path d="M4 5h16v11H9l-5 4z"/>',
+    pin: '<path d="M12 21s-6-5.6-6-10a6 6 0 0 1 12 0c0 4.4-6 10-6 10z"/><circle cx="12" cy="11" r="2"/>',
+    camera: '<path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/>',
+    star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+    shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+    gem: '<path d="M6 4h12l3 5-9 11L3 9z"/><path d="M3 9h18"/>',
+    flame: '<path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3.2 2-4 0 2 1 2.5 1.5 2.5C10 9 10.5 5.5 12 3z"/>',
+    bolt: '<path d="M13 2L5 14h6l-1 8 8-12h-6z"/>',
+    level: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 16V8M9 11l3-3 3 3"/>'
+};
+const icon = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ICONS.star}</svg>`;
+
+const dayKey = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+function weekStart(d = new Date()) {   // Monday 00:00 of this week
+    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    x.setDate(x.getDate() - (x.getDay() + 6) % 7);
+    return x;
+}
+
+function levelOf(pts) {
+    let idx = 0;
+    LEVELS.forEach((l, i) => { if (pts >= l.min) idx = i; });
+    const cur = LEVELS[idx], next = LEVELS[idx + 1];
+    return { idx, cur, next, toNext: next ? next.min - pts : 0, pct: next ? Math.round((pts - cur.min) / (next.min - cur.min) * 100) : 100 };
+}
+
+// ---- saved progress (per username) ----
+let game = null, gameFor = null;
+function G() {
+    if (gameFor !== user.userName) {
+        gameFor = user.userName;
+        let all = {};
+        try { all = JSON.parse(localStorage.getItem(GAME_KEY)) || {}; } catch (e) { }
+        game = Object.assign({ last: '', streak: 0, best: 0, days: [], wk: '', wkPts: 0, lvl: null, seen: null, fresh: [] }, all[gameFor] || {});
+    }
+    const wk = dayKey(weekStart());
+    if (game.wk !== wk) { game.wk = wk; game.wkPts = 0; }                       // new week, board resets
+    if (game.last && game.last !== dayKey(new Date()) && game.last !== dayKey(addDays(new Date(), -1))) game.streak = 0;   // missed a day
+    return game;
+}
+function gameSave() {
+    let all = {};
+    try { all = JSON.parse(localStorage.getItem(GAME_KEY)) || {}; } catch (e) { }
+    all[gameFor] = game;
+    try { localStorage.setItem(GAME_KEY, JSON.stringify(all)); } catch (e) { }
+}
+
+// Call whenever the student does something that earns points.
+function track(gain) {
+    if (!loggedIn) return;
+    const g = G(), today = dayKey(new Date());
+    if (gain > 0) g.wkPts += gain;
+    if (g.last !== today) {
+        g.streak = g.last === dayKey(addDays(new Date(), -1)) ? g.streak + 1 : 1;
+        g.last = today;
+        g.best = Math.max(g.best, g.streak);
+        g.days = [...g.days.filter(d => d !== today), today].slice(-21);
+        if (STREAK_MARKS.includes(g.streak)) queueCelebration({ kind: 'streak', title: `${g.streak}-day streak`, sub: 'Come back tomorrow to keep it going.', icon: 'flame' });
+    }
+    gameSave();
+}
+
+// Looks for new badges and level-ups and celebrates them. Safe to call often.
+function gameSync() {
+    if (!loggedIn) { renderChip(); return; }
+    const g = G();
+    user.streak = g.streak;
+    user.bestStreak = g.best;
+    const all = user.badges(), earned = all.filter(b => b.earned).map(b => b.id), lvl = levelOf(user.points).idx;
+    if (g.seen === null) { g.seen = earned; g.lvl = lvl; }   // first visit: record what they already have, no popups
+    else {
+        all.filter(b => b.earned && !g.seen.includes(b.id)).forEach(b => {
+            g.fresh.push(b.id);
+            queueCelebration({ kind: 'badge', title: 'Badge unlocked', sub: `${b.name}: ${b.desc}`, icon: b.icon });
+        });
+        if (lvl > g.lvl) queueCelebration({ kind: 'level', title: `Level ${lvl + 1} reached`, sub: LEVELS[lvl].n, icon: 'level' });
+        g.seen = earned;
+        g.lvl = lvl;
+    }
+    gameSave();
+    renderChip();
+}
+
+// ---- weekly leaderboard (sample students grow through the week) ----
+function rivalPts(name, wk) {
+    let h = 0;
+    for (const c of name + wk) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    const now = new Date(), frac = ((now.getDay() + 6) % 7 + now.getHours() / 24) / 7;
+    return Math.round((40 + h % 80) * Math.min(1, frac + 0.1));
+}
+function weeklyBoard() {
+    const wk = dayKey(weekStart());
+    const rows = [...RIVALS.map(n => ({ n, p: rivalPts(n, wk), me: false })), { n: user.userName, p: G().wkPts, me: true }];
+    rows.sort((a, b) => b.p - a.p || (a.me ? 1 : -1));
+    return rows.map((r, i) => ({ ...r, rank: i + 1 }));
+}
+
+// ---- unlock popup with confetti ----
+const celebrateQ = [];
+let celebrating = false;
+function queueCelebration(c) { celebrateQ.push(c); if (!celebrating) nextCelebration(); }
+function nextCelebration() {
+    const c = celebrateQ.shift();
+    if (!c) { celebrating = false; return; }
+    celebrating = true;
+    let host = $('celebrate');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'celebrate';
+        host.setAttribute('popover', 'manual');   // top layer, so it also shows above open dialogs
+        host.setAttribute('role', 'status');
+        host.setAttribute('aria-live', 'polite');
+        document.body.appendChild(host);
+    }
+    const bits = Array.from({ length: 22 }, (_, i) => {
+        const a = i / 22 * Math.PI * 2 + Math.random() * .4, r = 60 + Math.random() * 70;
+        return `<i class="k${i % 5}" style="--dx:${Math.round(Math.cos(a) * r)}px;--dy:${Math.round(Math.sin(a) * r)}px;--r:${Math.round(Math.random() * 720 - 360)}deg"></i>`;
+    }).join('');
+    host.innerHTML = `<div class="cele ${c.kind}"><span class="medal">${icon(c.icon)}</span><div><b>${esc(c.title)}</b><p>${esc(c.sub)}</p></div><span class="bits" aria-hidden="true">${bits}</span></div>`;
+    try { if (host.showPopover && !host.matches(':popover-open')) host.showPopover(); } catch (e) { }
+    const card = host.firstElementChild;
+    let closed = false;
+    const done = () => {
+        if (closed) return;
+        closed = true;
+        card.classList.add('out');
+        setTimeout(() => { try { if (host.hidePopover && !celebrateQ.length) host.hidePopover(); } catch (e) { } nextCelebration(); }, 260);
+    };
+    card.addEventListener('click', done);
+    setTimeout(done, 3800);
+}
+
+// =====================================================
 // dashboard.js: Dashboard page: points, badges, 
 // leaderboard, verification.
 // =====================================================
 
-const BOARD = [['Mika', 85], ['Paolo', 62], ['Jen', 48], ['Ria', 35]];
-const LEVELS = [
-    { n: 'Newcomer', min: 0 }, { n: 'Contributor', min: 30 }, { n: 'Trusted reporter', min: 50 }, { n: 'Campus guide', min: 100 }
-];
 const verdict = r => r.net() >= 3 ? 'Verified' : r.net() <= -1 ? 'Disputed' : 'Needs votes';
 function busyBars(s) {
     const nowH = new Date().getHours();
@@ -436,53 +595,101 @@ function renderProfilePanel() {
       <a class="btn" target="_blank" rel="noopener" href="https://waze.com/ul?q=${q}">Waze</a>
     </div>`;
 }
-function renderVerify() {
-    const v = state.ver, all = [];
-    spots.forEach(s => s.reports.forEach(r => all.push({ s, r })));
-    all.sort((a, b) => b.r.ts - a.r.ts);
-    const verified = all.filter(x => x.r.net() >= 3).length, pct = all.length ? Math.round(verified / all.length * 100) : 0;
-    const list = all.filter(({ s, r }) => (v.spot === 'all' || s.id === +v.spot) && (v.show === 'all' || verdict(r) === v.show));
+function renderPicks() {
+    const p = state.pos, nowH = new Date().getHours();
+    const ranked = [...spots].sort((x, y) => (y.isOpen - x.isOpen) || (x.noise - y.noise) || (x.crowd - y.crowd) || (x.distance(p) - y.distance(p))).slice(0, 4);
+    const list = ranked.map((s, i) => {
+        const d = s.distance(p);
+        return `<li class="pick">
+          <em>${i + 1}</em>
+          ${s.photos.length ? `<img class="rthumb" src="${s.photos[0].src}" alt="">` : ''}
+          <div class="pi">
+            <b>${esc(s.name)}</b>
+            <small>${esc(s.kind)}, ${walk(d)} walk (${d} m), ${s.isOpen ? 'open now' : 'closed now'}, updated ${ago(s.updatedAt)}</small>
+            <div class="lvs"><span class="lv">${meter(s.noise, NOISE[s.noise] + ' noise')} ${NOISE[s.noise]}</span><span class="lv">${meter(s.crowd, CROWD[s.crowd] + ' crowd')} ${CROWD[s.crowd]} crowd</span></div>
+          </div>
+          <div class="acts"><button class="btn sm" data-act="view" data-id="${s.id}" aria-label="View ${esc(s.name)}">View</button><button class="btn sm solid" data-act="report" data-id="${s.id}" aria-label="Report status of ${esc(s.name)}">Report</button></div>
+        </li>`;
+    }).join('');
+
+    // busy-hours heatmap: one row per spot, 8 AM to 8 PM
+    const hours = Array.from({ length: 13 }, (_, i) => 8 + i);
+    let best = null;
+    spots.forEach(s => hours.forEach(h => {
+        if (h < nowH || h < s.hours[0] || h >= s.hours[1]) return;
+        const v = s.busy[h - 8];
+        if (!best || v < best.v) best = { s, h, v };
+    }));
+    const rows = spots.map(s => `<div class="hn" title="${esc(s.name)}">${esc(s.name)}</div>` + hours.map(h => {
+        const open = h >= s.hours[0] && h < s.hours[1], v = s.busy[h - 8];
+        return `<i class="${open ? '' : 'off'} ${h === nowH ? 'now' : ''}" style="--v:${(v / 100).toFixed(2)}" title="${esc(s.name)}, ${fmtHour(h)}: ${open ? v + '% busy' : 'closed'}"></i>`;
+    }).join('')).join('');
+
     $('dVerify').innerHTML = `
-    <h3 class="ph3">Community verification</h3>
-    <p class="meta" style="margin-bottom:12px">Upvote reports that match what you see and downvote the ones that don't. A report is Verified at +3 net votes and removed at −3.</p>
-    <div class="meta"><b style="color:var(--ink)">${verified} of ${all.length}</b> reports verified</div>
-    <div class="bar2" style="margin-top:6px" role="progressbar" aria-label="Share of verified reports" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
-    <div class="fgrid" style="margin:14px 0 4px">
-      <label class="f">Spot<select id="vSpot"><option value="all">All spots</option>${spots.map(s => `<option value="${s.id}" ${String(s.id) === String(v.spot) ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
-      <label class="f">Show<select id="vShow">${[
-        ['all', 'All reports'], ['Needs votes', 'Needs votes'], ['Disputed', 'Disputed'], ['Verified', 'Verified']
-    ].map(([val, l]) => `<option value="${val}" ${val === v.show ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-    </div>
-    <div class="vlist">${list.length ? list.map(({ s, r }) => `<div class="report"><div>
-      <p><strong>${esc(s.name)}</strong> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span></p>
-      <p class="meta">${esc(r.mine ? user.userName + ' (you)' : r.user)}: ${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd, ${ago(r.ts)}</p>
-      ${r.note ? `<p>${esc(r.note)}</p>` : ''}</div>
-      <div class="votes" aria-label="Is this report accurate?">
-        <button data-act="vote" data-id="${r.id}" data-dir="1" aria-pressed="${r.myVote === 1}" aria-label="Upvote, report is accurate" ${r.mine ? 'disabled' : ''}>▲</button>
-        <span>${r.net()}</span>
-        <button data-act="vote" data-id="${r.id}" data-dir="-1" aria-pressed="${r.myVote === -1}" aria-label="Downvote, report is not accurate" ${r.mine ? 'disabled' : ''}>▼</button>
-      </div></div>`).join('') : '<div class="empty">No reports match these filters.</div>'}</div>`;
+    <h3 class="ph3">Quietest right now</h3>
+    <p class="meta" style="margin-bottom:12px">Open spots first, then the lowest noise, the lowest crowd, and the shortest walk from you.</p>
+    ${ranked.length ? `<ol class="picks">${list}</ol>` : '<div class="empty">No spots yet. Add one from the Spots page.</div>'}
+    <h3 class="sec">Busy hours across spots</h3>
+    <p class="meta" style="margin-bottom:10px">${best ? `Best bet for the rest of today: <b style="color:var(--ink)">${esc(best.s.name)}</b> around ${fmtHour(best.h)} (${best.v}% busy).` : 'Every spot is closed for the rest of today.'}</p>
+    <div class="heatwrap"><div class="heat" role="img" aria-label="Heatmap of usual busy hours for each spot from 8 AM to 8 PM. Darker means busier. The outlined column is the current hour.">
+      <div></div>${hours.map((h, i) => `<span>${i % 2 === 0 ? shortHour(h) : ''}</span>`).join('')}${rows}
+    </div></div>
+    <p class="legend" style="margin-top:8px"><span class="lg"><i style="--v:.1"></i> Quiet</span><span class="lg"><i style="--v:.9"></i> Busy</span><span class="lg"><i class="off"></i> Closed</span></p>`;
 }
+let freshNow = new Set(), freshTimer = null;   // badges that should play the unlock animation on the shelf
 function renderRewards() {
-    const pts = user.points;
-    let idx = 0;
-    LEVELS.forEach((l, i) => { if (pts >= l.min)
-        idx = i; });
-    const cur = LEVELS[idx], next = LEVELS[idx + 1];
-    const pct = next ? Math.round((pts - cur.min) / (next.min - cur.min) * 100) : 100;
-    const board = [...BOARD.map(([n, p]) => ({ n, p, me: false })), { n: user.userName, p: pts, me: true }].sort((a, b) => b.p - a.p).slice(0, 6);
+    const pts = user.points, L = levelOf(pts), g = G(), today = dayKey(new Date()), ws = weekStart();
+    if (g.fresh.length) {
+        g.fresh.forEach(id => freshNow.add(id));
+        g.fresh = [];
+        gameSave();
+        clearTimeout(freshTimer);
+        freshTimer = setTimeout(() => freshNow.clear(), 2500);
+    }
+    const week = Array.from({ length: 7 }, (_, i) => { const k = dayKey(addDays(ws, i)); return { l: 'MTWTFSS'[i], on: g.days.includes(k), now: k === today, future: k > today }; });
+    const doneToday = g.last === today, CIRC = 276.5, off = (CIRC * (1 - L.pct / 100)).toFixed(1);
+    const board = weeklyBoard(), me = board.find(x => x.me), above = board[me.rank - 2];
+    const shown = board.slice(0, 5), left = Math.ceil((addDays(ws, 7) - new Date()) / 864e5);
+    const row = x => `<li class="${x.me ? 'me' : ''}"><em>${x.rank}</em><span class="nm">${esc(x.n)}${x.me ? ' <span class="tag solid" style="margin:0">You</span>' : ''}</span><b>${x.p}</b></li>`;
+    const earnedN = user.badges().filter(b => b.earned).length;
+    const shelf = user.badges().map(b => {
+        const fresh = freshNow.has(b.id);
+        return `<div class="slot ${b.earned ? 'got' : 'locked'} ${fresh ? 'fresh' : ''}">
+          <span class="medal">${icon(b.icon)}${fresh ? '<em class="newtag">New</em>' : ''}</span>
+          <b>${esc(b.name)}</b><small>${esc(b.desc)}</small>
+          ${b.earned ? '<span class="vh">Earned</span>' : `<span class="prog" role="progressbar" aria-label="Progress to ${esc(b.name)}" aria-valuenow="${b.have}" aria-valuemin="0" aria-valuemax="${b.need}"><i style="width:${Math.round(b.have / b.need * 100)}%"></i></span><small>${b.have} of ${b.need}</small>`}
+        </div>`;
+    }).join('');
     $('dRewards').innerHTML = `
     <h3 class="ph3">Gamification and rewards</h3>
-    <p class="meta" style="margin-bottom:18px">Students who share accurate, helpful updates earn points and badges. Rewards are points and badges only.</p>
+    <p class="meta" style="margin-bottom:18px">Students who share accurate, helpful updates earn points, levels, streaks, and badges. Rewards are points and badges only.</p>
     <div class="rgrid">
       <div>
-        <div class="meta">${esc(user.userName)}, ${esc(user.userType)}</div>
-        <div class="big">${pts} <span style="font-size:1rem;font-weight:500;color:var(--muted)">points</span></div>
-        <p style="margin:8px 0 6px;font-weight:700">${cur.n}</p>
-        <div class="bar2" role="progressbar" aria-label="Progress to next level" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
-        <p class="meta">${next ? `${next.min - pts} points to ${next.n}` : 'Top level reached.'}</p>
-        <p class="meta">${user.reportsMade} reports, ${user.spotsAdded} spots added, ${user.photosAdded} photos</p>
-        <h3 class="sec">How to earn points</h3>
+        <div class="lvlcard">
+          <div class="ring" role="img" aria-label="Level ${L.idx + 1}, ${L.pct} percent to the next level">
+            <svg viewBox="0 0 100 100"><circle class="trk" cx="50" cy="50" r="44"/><circle class="val" cx="50" cy="50" r="44" style="stroke-dasharray:${CIRC};stroke-dashoffset:${off};--full:${CIRC}"/></svg>
+            <div><small>Level</small><b>${L.idx + 1}</b></div>
+          </div>
+          <div>
+            <p class="lvname">${esc(L.cur.n)}</p>
+            <p class="meta">${esc(user.userName)}, ${pts} points</p>
+            <p class="meta">${L.next ? `${L.toNext} points to ${esc(L.next.n)}` : 'Top level reached.'}</p>
+          </div>
+        </div>
+        <div class="streak ${doneToday ? 'done' : ''}">
+          <div class="sline"><span class="flame">${icon('flame')}</span><div><b>${g.streak} day streak</b><small>${doneToday ? 'Counted for today. See you tomorrow.' : g.streak ? 'Send a report or rate a spot today to keep it.' : 'Do one thing today to start a streak.'}</small></div></div>
+          <div class="wkdots" role="img" aria-label="Active days this week: ${week.filter(d => d.on).length} of 7">${week.map(d => `<span class="${d.on ? 'on' : ''} ${d.now ? 'now' : ''} ${d.future ? 'future' : ''}"><i></i>${d.l}</span>`).join('')}</div>
+          <p class="meta">Best streak: ${g.best} ${g.best === 1 ? 'day' : 'days'}. ${user.reportsMade} reports, ${user.spotsAdded} spots added, ${user.photosAdded} photos.</p>
+        </div>
+      </div>
+      <div>
+        <h3 class="sec" style="margin-top:0">This week's leaderboard</h3>
+        <p class="meta" style="margin-bottom:10px">${left <= 1 ? 'Resets at midnight tonight' : `Resets Monday, in ${left} days`}. Other students are sample data.</p>
+        <ol class="wk">${shown.map(row).join('')}${me.rank > 5 ? `<li class="gap" aria-hidden="true">...</li>${row(me)}` : ''}</ol>
+        <p class="meta" style="margin-top:8px">${above ? `${above.p - me.p + 1} points to pass ${esc(above.n)}.` : 'You lead the board this week.'}</p>
+      </div>
+      <div>
+        <h3 class="sec" style="margin-top:0">How to earn points</h3>
         <ul class="earn">
           <li><b>+10</b> Send a status report</li>
           <li><b>+25</b> Add a new study spot</li>
@@ -490,18 +697,13 @@ function renderRewards() {
           <li><b>+2</b> Another student upvotes your report</li>
           <li><b>+15</b> Your report is verified by the community</li>
         </ul>
+        <p class="meta" style="margin-top:10px">Any of these also counts for today's streak.</p>
       </div>
-      <div>
-        <h3 class="sec" style="margin-top:0">Badges (${user.badges().filter(b => b.earned).length} of ${user.badges().length})</h3>
-        <div class="badges" style="grid-template-columns:1fr">${user.badges().map(b => `<div class="badge ${b.earned ? '' : 'locked'}"><b>${esc(b.name)}</b><small>${esc(b.desc)}${b.earned ? '. Earned' : '. Locked'}</small></div>`).join('')}</div>
-      </div>
-      <div>
-        <h3 class="sec" style="margin-top:0">Top contributors (sample)</h3>
-        <ol class="board">${board.map(x => `<li class="${x.me ? 'me' : ''}">${esc(x.n)}${x.me ? ' <span class="tag solid" style="margin:0">You</span>' : ''}<span>${x.p}</span></li>`).join('')}</ol>
-      </div>
-    </div>`;
+    </div>
+    <h3 class="sec">Badge shelf (${earnedN} of ${user.badges().length})</h3>
+    <div class="shelf">${shelf}</div>`;
 }
-function renderDash() { if (!$('stats')) return; renderStats(); renderProfilePanel(); renderVerify(); renderRewards(); }
+function renderDash() { if (!$('stats')) return; renderStats(); renderProfilePanel(); renderPicks(); renderRewards(); }
 
 // =====================================================
 // spot-detail.js: Spot detail popup, status reports, 
@@ -641,7 +843,7 @@ function openPhoto(photoId) {
     $('dlgPhoto').showModal();
 }
 function openSpot(id) { if (!requireLogin('Please log in to continue.')) return; state.sel = id; renderTop(); renderPhotos(); renderReports(); renderMap(); $('dlgSpot').showModal(); }
-function refreshAll() { renderFeed(); renderHome(); renderRows(); renderMap(); renderDash(); renderChip(); save(); if ($('dlgSpot') && $('dlgSpot').open) {
+function refreshAll() { gameSync(); renderFeed(); renderHome(); renderRows(); renderMap(); renderDash(); renderChip(); save(); if ($('dlgSpot') && $('dlgSpot').open) {
     renderTop();
     renderPhotos(true);
     renderReports();
@@ -728,15 +930,13 @@ on('reportForm', 'submit', async e => {
         }
         s.updatedAt = Date.now();
 
-        // Points
+        // Points (use the server's total when it is higher, never lower the student's points)
         user.reportsMade++;
-        if (typeof data.points === 'number') {
-            user.points = data.points;
-        } else {
-            user.points += 5;
-        }
+        const gain = (typeof data.points === 'number' && data.points > user.points) ? data.points - user.points : 5;
+        user.points += gain;
+        track(gain);   // streak and weekly leaderboard
 
-        toast('Report submitted! +5 points');
+        toast(`Report submitted! +${gain} points`);
         $('dlgReport').close();
         refreshAll();
         save();
@@ -925,8 +1125,6 @@ document.addEventListener('click', e => {
     if (act === 'fav') {
         const on = user.toggleFavorite(id);
         toast(on ? 'Saved to favorites' : 'Removed from favorites');
-        if (on && user.favoriteSpots.size === 3)
-            toast('Badge unlocked: Favorites fan');
         refreshAll();
     }
     if (act === 'vote')
@@ -970,14 +1168,6 @@ document.addEventListener('change', e => {
     if (id === 'dSpotSel') {
         state.dashSpot = +e.target.value;
         renderProfilePanel();
-    }
-    if (id === 'vSpot') {
-        state.ver.spot = e.target.value;
-        renderVerify();
-    }
-    if (id === 'vShow') {
-        state.ver.show = e.target.value;
-        renderVerify();
     }
 });
 
