@@ -747,8 +747,8 @@ function renderReports() {
         return;
     $('dReports').innerHTML = `<h3 class="sec" style="margin-top:22px">Recent reports</h3>` +
         (s.reports.length ? s.reports.map(r => `<div class="report"><div>
-      <p><strong>${esc(r.user)}${r.mine ? ' (you)' : ''}</strong> <span class="meta">${ago(r.ts)}</span></p>
-      <p class="meta">${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd</p>${r.note ? `<p>${esc(r.note)}</p>` : ''}</div>
+      <p><strong>${esc(r.user)}${r.mine ? ' (you)' : ''}</strong> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span> <span class="meta">${ago(r.ts)}</span></p>
+      <p class="meta">${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd${r.net() < 3 && r.net() > -1 ? `. Needs ${3 - r.net()} more ${3 - r.net() === 1 ? 'upvote' : 'upvotes'} to be verified` : ''}</p>${r.note ? `<p>${esc(r.note)}</p>` : ''}</div>
       <div class="votes" aria-label="Is this report accurate?">
         <button data-act="vote" data-id="${r.id}" data-dir="1" aria-pressed="${r.myVote === 1}" aria-label="Upvote, report is accurate" ${r.mine ? 'disabled' : ''}>▲</button>
         <span>${r.net()}</span>
@@ -1215,6 +1215,13 @@ function soc(s) {
             }))
         };
     }
+    social[s.id].comments.forEach((m, i) => {   // sample votes from other students, set once
+        if (!m.mine && m.up === undefined && m.down === undefined) {
+            const h = hsh(s);
+            m.up = 1 + (h + i * 5) % 8;
+            m.down = (h + i * 3) % 3;
+        }
+    });
     return social[s.id];
 }
 function spotArt(s) {
@@ -1238,6 +1245,19 @@ function spotArt(s) {
     }
     return 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400">${g}</svg>`);
 }
+// Comment votes: m.up and m.down are totals, m.vote is this student's own vote (1, -1 or 0).
+const cmMine = m => m.vote ?? (m.liked ? 1 : 0);
+const cmNet = m => (m.up || 0) - (m.down || 0);
+function cmVote(m, dir) {
+    const cur = cmMine(m);
+    if (cur === 1) m.up = (m.up || 0) - 1;
+    if (cur === -1) m.down = (m.down || 0) - 1;
+    const next = cur === dir ? 0 : dir;
+    if (next === 1) m.up = (m.up || 0) + 1;
+    if (next === -1) m.down = (m.down || 0) + 1;
+    m.vote = next;
+    delete m.liked;
+}
 function renderFeed() {
     if (!$('feed')) return;
     const q = $('fq').value.trim().toLowerCase(), so = $('fsort').value, quiet = $('fquiet').checked, rt = x => soc(x).sum / soc(x).count;
@@ -1251,7 +1271,7 @@ function renderFeed() {
         const sc = soc(s), avg = sc.sum / sc.count, fill = Math.round(sc.mine || avg), fav = user.favoriteSpots.has(s.id), d = s.distance(state.pos);
         const real = s.photos.length > 0, img = real ? s.photos[0].src : spotArt(s);
         const stars = [1, 2, 3, 4, 5].map(i => `<button class="star ${i <= fill ? 'on' : ''}" data-act="rate" data-id="${s.id}" data-n="${i}" aria-label="Rate ${i} of 5 stars">★</button>`).join('');
-        const cms = sc.open ? `<div class="cms">${sc.comments.map((m, i) => `<div class="cm"><span class="av">${esc(m.user[0].toUpperCase())}</span><div class="bub"><b>${esc(m.user)}${m.mine ? ' (you)' : ''}</b> <small>${ago(m.ts)}</small><p>${esc(m.text)}</p><button class="lk" data-act="cm-like" data-id="${s.id}" data-i="${i}">▲ ${m.up || 0}</button>${m.mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}</div></div>`).join('')}
+        const cms = sc.open ? `<div class="cms">${sc.comments.map((m, i) => `<div class="cm ${cmNet(m) <= -3 ? 'low' : ''}"><span class="av">${esc(m.user[0].toUpperCase())}</span><div class="bub"><b>${esc(m.user)}${m.mine ? ' (you)' : ''}</b> <small>${ago(m.ts)}</small><p>${esc(m.text)}</p><span class="cvote" role="group" aria-label="Votes on this comment"><button class="lk" data-act="cm-like" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === 1}" aria-label="Upvote, helpful. ${m.up || 0} upvotes" ${m.mine ? 'disabled' : ''}>▲ ${m.up || 0}</button><button class="lk" data-act="cm-down" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === -1}" aria-label="Downvote, not helpful. ${m.down || 0} downvotes" ${m.mine ? 'disabled' : ''}>▼ ${m.down || 0}</button></span>${m.mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}${cmNet(m) <= -3 ? '<span class="lowtag">Downvoted by students</span>' : ''}</div></div>`).join('')}
       <div class="cmrow"><input type="text" class="cm-in" data-id="${s.id}" placeholder="Write feedback about this spot" value="${esc(sc.draft)}" aria-label="Comment on ${esc(s.name)}"><button class="btn solid sm" data-act="cm-post" data-id="${s.id}">Post</button></div></div>` : '';
         return `<article class="card post">
       <header><span class="av">${esc(s.name[0])}</span><div><h3>${esc(s.name)}</h3><small>${esc(s.kind)}${s.isOpen ? '' : ', closed now'} · ${Math.max(1, Math.round(d / 60))} min walk (${d} m)</small></div>${s.isNew ? '<span class="tag solid">New</span>' : ''}</header>
@@ -1338,10 +1358,10 @@ document.addEventListener('click', e => {
             toast(t);
         }
     }
-    if (a === 'cm-like') {
+    if (a === 'cm-like' || a === 'cm-down') {
         const m = soc(s).comments[i];
-        m.liked = !m.liked;
-        m.up = (m.up || 0) + (m.liked ? 1 : -1);
+        if (m.mine) return;
+        cmVote(m, a === 'cm-like' ? 1 : -1);
         renderFeed();
     }
     if (a === 'cm-del') {
@@ -1468,6 +1488,25 @@ on('signupForm', 'submit', async e => {
     }
 });
 
+// Sample reports from other students, added once per browser so the voting
+// (verify / dispute) can be tried. They match each spot's current status.
+function seedSampleReports() {
+    let done = null;
+    try { done = localStorage.getItem('qs-seed-v1'); } catch (e) { }
+    if (done || !spots.length) return;
+    const sets = [
+        [['Mika', 2, 0, 12, 'Tahimik pa dito, kaunti lang ang tao.'], ['Jen', 3, 0, 95, 'Maraming outlet malapit sa bintana.']],
+        [['Paolo', 1, 1, 25, 'Medyo maingay pag lunch break.'], ['Mika', 0, 2, 140, 'Puno na kanina, wala nang upuan.']],
+        [['Jen', 2, 0, 8, 'Okay ang Wi-Fi at malamig ang aircon.'], ['Paolo', 0, 0, 60, 'Maganda pumunta bago mag 10 am.']]
+    ];
+    spots.forEach((s, i) => {
+        if (s.reports.length) return;
+        s.reports = sets[i % sets.length].map(([user, up, down, m, note]) =>
+            new Report({ id: rid++, spotId: s.id, user, noise: s.noise, crowd: s.crowd, note, ts: mins(m), up, down }));
+    });
+    try { localStorage.setItem('qs-seed-v1', '1'); } catch (e) { }
+}
+
 // =====================================================
 // main.js: Start-up: runs when the page loads.
 // =====================================================
@@ -1538,6 +1577,7 @@ loadState();
 loadSpotsFromJava().then(ok => {
     if (!ok) return;
     loadState();   // restore saved photos, reports and added spots AFTER the spots are loaded from Java
+    seedSampleReports();
     document.querySelectorAll('nav.main .pill').forEach(b =>
         b.setAttribute('aria-current', b.dataset.page === CURRENT ? 'page' : 'false')
     );

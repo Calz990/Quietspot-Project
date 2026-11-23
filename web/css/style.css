@@ -2685,3 +2685,44 @@ ol.wk {
   width: 22px;
   height: 14px;
 }
+
+/* feed comments: upvote / downvote */
+.cvote {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 10px;
+}
+
+.cvote .lk {
+  margin-right: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.cvote .lk[aria-pressed="true"] {
+  background: var(--brand,var(--ink));
+  color: var(--on-brand,var(--on-ink));
+}
+
+.cvote .lk:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+
+.cscore {
+  min-width: 18px;
+  text-align: center;
+  font-weight: 700;
+  font-size: .85rem;
+}
+
+.cm.low .bub p {
+  opacity: .5;
+}
+
+.lowtag {
+  color: var(--muted);
+  font-size: .78rem;
+  font-style: italic;
+}
