@@ -1206,7 +1206,7 @@ function soc(s) {
         const h = hsh(s), count = 18 + h % 60, avg = 3.8 + (h % 11) / 10;
         const names = ['Mika', 'Jen', 'Paolo', 'Ana', 'Rico', 'Lea'];
         const lines = [
-            'Tahimik dito, sakto pang review.', 'Maraming outlet, pero minsan puno na pag hapon.', 'Okay ang Wi-Fi at malamig ang aircon.', 'Sulit, at mabilis ang update ng mga reports.', 'Medyo maingay pag lunch break.', 'Maganda pumunta bago mag 10 am.'
+            'Tahimik dito, sakto pang review.', 'Maraming outlet, pero minsan puno na pag hapon.', 'May wifi naman pero mahina at mainit.', 'Sulit, at mabilis ang update ng mga reports.', 'Medyo maingay pag lunch break.', 'Maganda pumunta bago mag 10 am.'
         ];
         social[s.id] = {
             sum: Math.round(avg * count), count, mine: 0, open: false, draft: '',
