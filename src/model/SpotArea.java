@@ -52,7 +52,25 @@ public abstract class SpotArea {
     }
     public void addReport(ReportStatus r) {
         this.reports.add(r);
-        updateStatus(r.getNoise(), r.getCrowd());
+
+        // Average all reports
+        int noiseSum = 0;
+        int crowdSum = 0;
+        for (ReportStatus report : reports) {
+            noiseSum += report.getNoise().ordinal();
+            crowdSum += report.getCrowd().ordinal();
+        }
+        int count = reports.size();
+        int avgNoise = (int) Math.round((double) noiseSum / count);
+        int avgCrowd = (int) Math.round((double) crowdSum / count);
+
+        // Clamp to valid range
+        avgNoise = Math.max(0, Math.min(NoiseLevel.values().length - 1, avgNoise));
+        avgCrowd = Math.max(0, Math.min(CrowdLevel.values().length - 1, avgCrowd));
+
+        this.noise = NoiseLevel.values()[avgNoise];
+        this.crowd = CrowdLevel.values()[avgCrowd];
+        this.updatedAt = System.currentTimeMillis();
     }
 
     // Getters & Setters

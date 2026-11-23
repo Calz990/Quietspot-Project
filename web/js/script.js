@@ -205,7 +205,7 @@ async function loadSpotsFromJava() {
                 rules: o.rules || '',
                 fac: {
                     wifi: !!fac.wifi,
-                    mdps: fac.mdps || 0,
+                    mbps: fac.mbps || 0,
                     outlets: !!fac.outlets,
                     aircon: !!fac.aircon,
                     food: !!fac.food
@@ -666,6 +666,101 @@ function openReport(id) {
     <div class="foot"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn solid">Send update (+10 points)</button></div>`;
     $('dlgReport').showModal();
 }
+on('reportForm', 'submit', async e => {
+    e.preventDefault();
+
+    const s = byId(state.sel);
+    if (!s) return;
+
+    const noiseEl = document.querySelector('input[name="r-noise"]:checked');
+    const crowdEl = document.querySelector('input[name="r-crowd"]:checked');
+    const seatsEl = $('r-seats');
+    const noteEl  = $('r-note');
+    const errEl   = $('repErr');
+
+    if (errEl) errEl.textContent = '';
+
+    if (!noiseEl || !crowdEl) {
+        if (errEl) errEl.textContent = 'Please select both noise and crowd levels.';
+        return;
+    }
+
+    const noise = +noiseEl.value;
+    const crowd = +crowdEl.value;
+    const seats = seatsEl ? Number(seatsEl.value) : s.seats;
+    const note  = noteEl ? noteEl.value.trim() : '';
+
+    if (!Number.isInteger(seats) || seats < 0 || seats > s.capacity) {
+        if (errEl) errEl.textContent = `Open seats must be between 0 and ${s.capacity}.`;
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                username: user.userName,
+                spotId: s.id,
+                noise: noise,
+                crowd: crowd,
+                note: note
+            })
+        });
+
+        const data = await res.json();
+
+        if (!data.ok) {
+            if (errEl) errEl.textContent = data.error || 'Report failed';
+            toast(data.error || 'Report failed');
+            return;
+        }
+
+        // Add the new report first
+        const report = new Report({
+            id: rid++,
+            spotId: s.id,
+            user: user.userName,
+            noise, crowd, seats, note,
+            ts: Date.now(),
+            up: 0, down: 0, mine: true
+        });
+        s.reports.unshift(report);
+
+        // Average all reports for this spot
+        if (s.reports.length > 0) {
+            let noiseSum = 0, crowdSum = 0, seatsSum = 0;
+            s.reports.forEach(r => {
+                noiseSum += r.noise;
+                crowdSum += r.crowd;
+                seatsSum += (r.seats ?? s.seats);
+            });
+            const count = s.reports.length;
+            s.noise = Math.round(noiseSum / count);
+            s.crowd = Math.round(crowdSum / count);
+            s.seats = Math.round(seatsSum / count);
+        }
+        s.updatedAt = Date.now();
+
+        // Points
+        user.reportsMade++;
+        if (typeof data.points === 'number') {
+            user.points = data.points;
+        } else {
+            user.points += 5;
+        }
+
+        toast('Report submitted! +5 points');
+        $('dlgReport').close();
+        refreshAll();
+        save();
+
+    } catch (err) {
+        console.error(err);
+        if (errEl) errEl.textContent = 'Cannot connect to Java server.';
+        toast('Cannot connect to Java server.');
+    }
+});
 on('addForm', 'submit', async e => {
     e.preventDefault();
     const err = $('addErr');
@@ -802,74 +897,6 @@ function fillHours() {
     $('a-open').innerHTML = o;
     $('a-close').innerHTML = c;
 }
-on('addForm', 'submit', e => {
-    e.preventDefault();
-    const err = $('addErr');
-    try {
-        const name = $('a-name').value.trim();
-        if (name.length < 3)
-            throw new Error('Enter a name with at least 3 characters.');
-        if (spots.some(s => s.name.toLowerCase() === name.toLowerCase()))
-            throw new Error('This spot is already listed.');
-        const open = +$('a-open').value, close = +$('a-close').value;
-        if (close <= open)
-            throw new Error('Closing time must be later than opening time.');
-        const cap = Number($('a-cap').value);
-        if (!Number.isInteger(cap) || cap < 1)
-            throw new Error('Total seats must be a whole number of at least 1.');
-        const price = Number($('a-price').value), mbps = Number($('a-mbps').value);
-        if (!(price >= 0))
-            throw new Error('Price cannot be negative.');
-        if (!(mbps >= 0))
-            throw new Error('Wi-Fi speed cannot be negative.');
-        const jit = () => (Math.random() - .5) * 8;
-        const spotType = $('a-type').value;
-        const spot = new TYPES[spotType]({
-            id: Math.max(...spots.map(s => s.id)) + 1, name, address: $('a-addr').value.trim() || 'Location pinned on the map',
-            x: Math.min(94, Math.max(6, state.pos.x + jit())), y: Math.min(64, Math.max(6, state.pos.y + jit())), hours: [open, close], price, capacity: cap,
-            seats: Number($('a-seats').value), noise: +$('a-noise').value, crowd: +$('a-crowd').value, rules: $('a-rules').value.trim(), description: $('a-desc').value.trim(), isNew: true,
-            fac: {
-                wifi: mbps > 0, mbps, outlets: $('a-outlets').checked, aircon: $('a-aircon').checked, food: $('a-food').checked
-            }
-        });
-        spots.push(spot);
-        user.spotsAdded++;
-        err.textContent = '';
-        $('addForm').reset();
-        fillHours();
-        $('dlgAdd').close();
-        clearFilters();
-        state.sel = spot.id;
-        refreshAll();
-        award(25, 'new study spot added');
-
-        // Sync new spot to backend
-        fetch('/api/add-spot', {
-            method: 'POST',
-            body: new URLSearchParams({
-                type: spotType,
-                name: spot.name,
-                address: spot.address,
-                x: spot.x,
-                y: spot.y,
-                open: open,
-                close: close,
-                price: price,
-                mbps: mbps,
-                noise: spot.noise,
-                crowd: spot.crowd,
-                outlets: spot.facility.outlets,
-                aircon: spot.facility.aircon,
-                food: spot.facility.food,
-                description: spot.description,
-                rules: spot.rules
-            })
-        }).catch(err => console.warn('Backend add-spot sync skipped:', err));
-    }
-    catch (ex) {
-        err.textContent = ex.message;
-    }
-});
 
 // =====================================================
 // events.js: Click, keyboard, and form event listeners.
