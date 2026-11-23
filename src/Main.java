@@ -182,13 +182,39 @@ public class Main {
         });
 
         server.start();
+        String url = "http://localhost:8080";
         System.out.println("=========================================");
         System.out.println("QuietSpot Java Server is running!");
-        System.out.println("Open in browser: http://localhost:8080");
+        System.out.println("Opening " + url + "...");
         System.out.println("=========================================");
+        openBrowser(url);
     }
 
     // --- Helper Methods ---
+    private static void openBrowser(String url) {                   // Opens the default browser.
+        try {
+            if (java.awt.Desktop.isDesktopSupported()
+                    && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
+                java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
+                return;
+            }
+        } catch (Exception ignored) {                               // fall through to the OS-specific commands below
+
+        }
+        try {
+            String os = System.getProperty("os.name").toLowerCase();
+            if (os.contains("win")) {
+                new ProcessBuilder("rundll32", "url.dll,FileProtocolHandler", url).start();
+            } else if (os.contains("mac")) {
+                new ProcessBuilder("open", url).start();
+            } else {
+                new ProcessBuilder("xdg-open", url).start();
+            }
+        } catch (Exception e) {
+            System.out.println("Could not open the browser automatically. Please open: " + url);
+        }
+    }
+
     private static String readBody(HttpExchange ex) throws IOException {
         return new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
     }
