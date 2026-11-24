@@ -26,6 +26,9 @@ const ago = ts => {
 };
 const busyCurve = (peak, w, base = 8) => Array.from({ length: 13 }, (_, i) => Math.min(100, Math.round(base + 85 * Math.exp(-((8 + i - peak) ** 2) / (2 * w * w)))));
 const walk = m => Math.max(1, Math.ceil(m / 80)) + ' min';
+// Directions links (free, no API key): Google Maps uses the person's own location as the start
+const gmapsDir = s => `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}&travelmode=walking`;
+const wazeDir = s => `https://waze.com/ul?ll=${s.lat},${s.lng}&navigate=yes`;
 
 // =====================================================
 // model.js: OOP model: Spot classes 
@@ -66,7 +69,16 @@ class StudySpot {
         this.photos.unshift(p);
     }
     removePhoto(id) { this.photos = this.photos.filter(p => p.id !== id); }
-    distance(p) { return Math.round(Math.hypot(this.x - p.x, this.y - p.y) * 18); }
+    // Map coordinates: the server stores longitude in x and latitude in y.
+    get lng() { return this.x; }
+    get lat() { return this.y; }
+    // Straight-line distance in meters between this spot and p = { lat, lng } (haversine formula)
+    distance(p) {
+        const R = 6371000, rad = d => d * Math.PI / 180;
+        const dLat = rad(p.lat - this.lat), dLng = rad(p.lng - this.lng);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(this.lat)) * Math.cos(rad(p.lat)) * Math.sin(dLng / 2) ** 2;
+        return Math.round(2 * R * Math.asin(Math.sqrt(a)));
+    }
     updateStatus({ noise, crowd }) { this.noise = noise; this.crowd = crowd; this.updatedAt = Date.now(); }
     syncFrom(r) { this.noise = r.noise; this.crowd = r.crowd; this.updatedAt = r.ts; }
     displayInfo() { return `${this.name} (${this.kind}): ${NOISE[this.noise]} noise, ${CROWD[this.crowd]} crowd. ${this.extraInfo()}`.trim(); }
@@ -148,9 +160,9 @@ const PUBLIC_PAGES = [
 ];
 const state = {
     pos: {
-         x: 40, 
-         y: 35 
-        },
+        lat: 13.7847,
+        lng: 121.0735
+    },
     sel: null,
     dashSpot: null,
     ver: { spot: 'all', show: 'all' },   // Community verification filters on the dashboard
@@ -260,6 +272,8 @@ function applyTheme(t) {
 $('themeBtn').addEventListener('click', () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
 applyTheme(document.documentElement.getAttribute('data-theme'));
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3000); }
+// Point values: the ONLY place they are defined. award() callers and the "How to earn points" list both read from here.
+const POINTS = { report: 5, spot: 25, photo: 5, rating: 2, comment: 3 };
 function award(n, why) {
     user.points += n;
     track(n);          // counts toward today's streak and this week's leaderboard
@@ -377,21 +391,67 @@ function renderRows() {
       </div></td></tr>`;
     }).join('') : `<tr><td colspan="7" class="empty">No spots match these filters. <button class="btn sm" data-act="clear">Clear filters</button></td></tr>`;
 }
-function renderMap() {
-    if (!$('map')) return;
-    const match = new Set(filtered().map(s => s.id));
-    let g = `<rect x="6" y="8" width="38" height="26" rx="3" fill="none" stroke="var(--ink)" stroke-width=".5" stroke-dasharray="2 1.5"/><text x="9" y="14" font-size="2.8" fill="var(--muted)">Campus (sample)</text>`;
-    g += `<path d="M0 44 L100 40 M30 0 L34 70 M68 0 L72 70" stroke="var(--line)" stroke-width="2.4" fill="none"/>`;
-    spots.forEach(s => {
-        const sel = s.id === state.sel;
-        g += `<g class="pin" data-act="view" data-id="${s.id}" tabindex="0" role="button" opacity="${match.has(s.id) ? 1 : .25}" aria-label="${esc(s.name)}">
-      <circle cx="${s.x}" cy="${s.y}" r="4.6" fill="var(--ink)" stroke="var(--surface)" stroke-width="1"/>
-      ${sel ? `<circle cx="${s.x}" cy="${s.y}" r="7" fill="none" stroke="var(--ink)" stroke-width=".7"/>` : ''}</g>`;
+// Leaflet map (OpenStreetMap tiles).
+let lmap = null, lpins = null, lme = null, lfit = false;
+function pinIcon(match, sel) {
+    return L.divIcon({
+        className: 'lpin-wrap',
+        html: `<span class="lpin${sel ? ' sel' : ''}${match ? '' : ' dim'}"></span>`,
+        iconSize: [26, 26], iconAnchor: [13, 13]
     });
-    const p = state.pos;
-    g += `<g aria-label="Your location"><rect x="${p.x - 2.4}" y="${p.y - 2.4}" width="4.8" height="4.8" transform="rotate(45 ${p.x} ${p.y})" fill="var(--surface)" stroke="var(--ink)" stroke-width="1"/><text x="${p.x}" y="${p.y + 7}" text-anchor="middle" font-size="2.8" font-weight="700" fill="var(--ink)" stroke="var(--surface2)" stroke-width="1" paint-order="stroke">You</text></g>`;
-    $('map').innerHTML = g;
 }
+function setPos(lat, lng, msg) {
+    state.pos = { lat, lng };
+    refreshAll();
+    if (msg) toast(msg);
+}
+function initMap() {
+    lmap = L.map('map', { zoomControl: true }).setView([state.pos.lat, state.pos.lng], 14);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
+    }).addTo(lmap);
+    lpins = L.layerGroup().addTo(lmap);
+    lme = L.marker([state.pos.lat, state.pos.lng], {
+        draggable: true, keyboard: true, title: 'Your location (drag to move)', zIndexOffset: 1000,
+        icon: L.divIcon({ className: 'lpin-wrap', html: '<span class="lme">You</span>', iconSize: [40, 22], iconAnchor: [20, 11] })
+    }).addTo(lmap);
+    lme.on('dragend', () => { const p = lme.getLatLng(); setPos(p.lat, p.lng, 'Location updated. Distances recalculated.'); });
+    lmap.on('click', e => setPos(e.latlng.lat, e.latlng.lng, 'Location updated. Distances recalculated.'));
+}
+function renderMap() {
+    const el = $('map');
+    if (!el) return;
+    if (typeof L === 'undefined') {
+        el.innerHTML = '<p class="empty">The map could not load. Check your internet connection and refresh.</p>';
+        return;
+    }
+    if (!lmap) initMap();
+    const match = new Set(filtered().map(s => s.id));
+    lpins.clearLayers();
+    spots.forEach(s => {
+        L.marker([s.lat, s.lng], {
+            icon: pinIcon(match.has(s.id), s.id === state.sel),
+            title: s.name, keyboard: true
+        }).bindTooltip(esc(s.name), { direction: 'top', offset: [0, -12] })
+          .on('click', () => openSpot(s.id))
+          .addTo(lpins);
+    });
+    lme.setLatLng([state.pos.lat, state.pos.lng]);
+    if (!lfit && spots.length) {   // zoom once so every spot and you are visible
+        lfit = true;
+        lmap.fitBounds(L.latLngBounds([...spots.map(s => [s.lat, s.lng]), [state.pos.lat, state.pos.lng]]), { padding: [30, 30], maxZoom: 16 });
+    }
+    setTimeout(() => lmap.invalidateSize(), 0);
+}
+function locateMe() {
+    if (!navigator.geolocation) return toast('Your browser cannot share its location.');
+    navigator.geolocation.getCurrentPosition(
+        p => { setPos(p.coords.latitude, p.coords.longitude, 'Using your current location.'); if (lmap) lmap.setView([state.pos.lat, state.pos.lng], 16); },
+        () => toast('Could not get your location. Allow location access, or click the map to set it.'),
+        { enableHighAccuracy: true, timeout: 10000 });
+}
+on('locBtn', 'click', locateMe);
 
 // =====================================================
 // game.js: Levels, daily streaks, badge unlocks,
@@ -435,18 +495,22 @@ function levelOf(pts) {
     return { idx, cur, next, toNext: next ? next.min - pts : 0, pct: next ? Math.round((pts - cur.min) / (next.min - cur.min) * 100) : 100 };
 }
 
-// ---- saved progress (per username) ----
+// saved progress (per username)
 let game = null, gameFor = null;
 function G() {
     if (gameFor !== user.userName) {
         gameFor = user.userName;
         let all = {};
         try { all = JSON.parse(localStorage.getItem(GAME_KEY)) || {}; } catch (e) { }
-        game = Object.assign({ last: '', streak: 0, best: 0, days: [], wk: '', wkPts: 0, lvl: null, seen: null, fresh: [] }, all[gameFor] || {});
+        game = Object.assign({ last: '', streak: 0, best: 0, days: [], wk: '', wkPts: 0, log: null, lvl: null, seen: null, fresh: [] }, all[gameFor] || {});
+        if (!game.log) game.log = game.wkPts > 0 ? [{ t: Date.now(), n: game.wkPts }] : [];                                         // older saves had only a weekly total
     }
     const wk = dayKey(weekStart());
-    if (game.wk !== wk) { game.wk = wk; game.wkPts = 0; }                       // new week, board resets
-    if (game.last && game.last !== dayKey(new Date()) && game.last !== dayKey(addDays(new Date(), -1))) game.streak = 0;   // missed a day
+    game.wk = wk;
+    const since = weekStart().getTime();
+    game.log = game.log.filter(e => e.t >= since);                                                                                  // new week: older entries drop off, board resets
+    game.wkPts = game.log.reduce((t, e) => t + e.n, 0);                                                                             // weekly points = what was earned since Monday
+    if (game.last && game.last !== dayKey(new Date()) && game.last !== dayKey(addDays(new Date(), -1))) game.streak = 0;            // missed a day
     return game;
 }
 function gameSave() {
@@ -460,7 +524,7 @@ function gameSave() {
 function track(gain) {
     if (!loggedIn) return;
     const g = G(), today = dayKey(new Date());
-    if (gain > 0) g.wkPts += gain;
+    if (gain > 0) { g.log.push({ t: Date.now(), n: gain }); g.wkPts += gain; }
     if (g.last !== today) {
         g.streak = g.last === dayKey(addDays(new Date(), -1)) ? g.streak + 1 : 1;
         g.last = today;
@@ -492,21 +556,21 @@ function gameSync() {
     renderChip();
 }
 
-// ---- weekly leaderboard (sample students grow through the week) ----
+// weekly leaderboard 
 function rivalPts(name, wk) {
     let h = 0;
     for (const c of name + wk) h = (h * 31 + c.charCodeAt(0)) >>> 0;
     const now = new Date(), frac = ((now.getDay() + 6) % 7 + now.getHours() / 24) / 7;
-    return Math.round((40 + h % 80) * Math.min(1, frac + 0.1));
+    return Math.round((10 + h % 50) * Math.min(1, frac + 0.1));   // sample students: a realistic 10-60 points a week
 }
 function weeklyBoard() {
     const wk = dayKey(weekStart());
-    const rows = [...RIVALS.map(n => ({ n, p: rivalPts(n, wk), me: false })), { n: user.userName, p: G().wkPts, me: true }];
-    rows.sort((a, b) => b.p - a.p || (a.me ? 1 : -1));
+    const rows = [...RIVALS.map(n => ({ n, p: rivalPts(n, wk), me: false })), { n: user.userName, p: Math.min(G().wkPts, user.points), me: true }];
+    rows.sort((a, b) => b.p - a.p || (a.me ? -1 : b.me ? 1 : a.n.localeCompare(b.n)));
     return rows.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
-// ---- unlock popup with confetti ----
+// unlock popup with confetti animation
 const celebrateQ = [];
 let celebrating = false;
 function queueCelebration(c) { celebrateQ.push(c); if (!celebrating) nextCelebration(); }
@@ -518,7 +582,7 @@ function nextCelebration() {
     if (!host) {
         host = document.createElement('div');
         host.id = 'celebrate';
-        host.setAttribute('popover', 'manual');   // top layer, so it also shows above open dialogs
+        host.setAttribute('popover', 'manual');   // top layer
         host.setAttribute('role', 'status');
         host.setAttribute('aria-live', 'polite');
         document.body.appendChild(host);
@@ -564,7 +628,6 @@ function renderProfilePanel() {
     if (!byId(state.dashSpot))
         state.dashSpot = spots[0].id;
     const s = byId(state.dashSpot), d = s.distance(state.pos), best = s.bestTime();
-    const q = encodeURIComponent(s.name + ' Alangilan Batangas City');
     $('dProfile').innerHTML = `
     <h3 class="ph3">Spot profile</h3>
     <p class="meta" style="margin-bottom:10px">Everything about a place in one view: description, hours, location, facilities, rules, and busy hours.</p>
@@ -591,8 +654,8 @@ function renderProfilePanel() {
     <div class="acts" style="margin-top:16px;flex-wrap:wrap">
       <button class="btn solid" data-act="view" data-id="${s.id}">All photos and reports</button>
       <button class="btn" data-act="report" data-id="${s.id}">Report status</button>
-      <a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${q}">Google Maps</a>
-      <a class="btn" target="_blank" rel="noopener" href="https://waze.com/ul?q=${q}">Waze</a>
+      <a class="btn" target="_blank" rel="noopener" href="${gmapsDir(s)}">Google Maps</a>
+      <a class="btn" target="_blank" rel="noopener" href="${wazeDir(s)}">Waze</a>
     </div>`;
 }
 function renderPicks() {
@@ -636,7 +699,8 @@ function renderPicks() {
     </div></div>
     <p class="legend" style="margin-top:8px"><span class="lg"><i style="--v:.1"></i> Quiet</span><span class="lg"><i style="--v:.9"></i> Busy</span><span class="lg"><i class="off"></i> Closed</span></p>`;
 }
-let freshNow = new Set(), freshTimer = null;   // badges that should play the unlock animation on the shelf
+// badges that play the unlock animation on the shelf
+let freshNow = new Set(), freshTimer = null;
 function renderRewards() {
     const pts = user.points, L = levelOf(pts), g = G(), today = dayKey(new Date()), ws = weekStart();
     if (g.fresh.length) {
@@ -684,18 +748,18 @@ function renderRewards() {
       </div>
       <div>
         <h3 class="sec" style="margin-top:0">This week's leaderboard</h3>
-        <p class="meta" style="margin-bottom:10px">${left <= 1 ? 'Resets at midnight tonight' : `Resets Monday, in ${left} days`}. Other students are sample data.</p>
+        <p class="meta" style="margin-bottom:10px">Points earned since Monday. ${left <= 1 ? 'Resets at midnight tonight' : `Resets Monday, in ${left} days`}. Other students are sample data.</p>
         <ol class="wk">${shown.map(row).join('')}${me.rank > 5 ? `<li class="gap" aria-hidden="true">...</li>${row(me)}` : ''}</ol>
-        <p class="meta" style="margin-top:8px">${above ? `${above.p - me.p + 1} points to pass ${esc(above.n)}.` : 'You lead the board this week.'}</p>
+        <p class="meta" style="margin-top:8px">${above ? `${above.p - me.p + 1} ${above.p - me.p + 1 === 1 ? 'point' : 'points'} to pass ${esc(above.n)}.` : 'You lead the board this week.'} You earned ${me.p} this week; ${user.points} in total.</p>
       </div>
       <div>
         <h3 class="sec" style="margin-top:0">How to earn points</h3>
         <ul class="earn">
-          <li><b>+10</b> Send a status report</li>
-          <li><b>+25</b> Add a new study spot</li>
-          <li><b>+5</b> Share a photo of a spot</li>
-          <li><b>+2</b> Another student upvotes your report</li>
-          <li><b>+15</b> Your report is verified by the community</li>
+          <li><b>+${POINTS.report}</b> Send a status report</li>
+          <li><b>+${POINTS.spot}</b> Add a new study spot</li>
+          <li><b>+${POINTS.photo}</b> Share a photo of a spot</li>
+          <li><b>+${POINTS.comment}</b> Write feedback on a spot</li>
+          <li><b>+${POINTS.rating}</b> Rate a spot</li>
         </ul>
         <p class="meta" style="margin-top:10px">Any of these also counts for today's streak.</p>
       </div>
@@ -715,7 +779,6 @@ function renderTop() {
     if (!s)
         return;
     const d = s.distance(state.pos), fav = user.favoriteSpots.has(s.id), best = s.bestTime(), nowH = new Date().getHours();
-    const q = encodeURIComponent(s.name + ' Alangilan Batangas City');
     const bars = busyBars(s);
     $('dTop').innerHTML = `
     <div class="dhead">
@@ -738,8 +801,8 @@ function renderTop() {
     <div class="bars" role="img" aria-label="Bar chart of usual busy hours from 8 AM to 8 PM. The hatched bar is the current hour.">${bars}</div>
     <p class="meta">${best ? `Usually least busy around ${fmtHour(best.h)} from now until closing.` : 'Closed for the rest of today.'}</p>
     <div class="acts" style="margin-top:14px;flex-wrap:wrap">
-      <a class="btn solid" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${q}">Directions in Google Maps</a>
-      <a class="btn" target="_blank" rel="noopener" href="https://waze.com/ul?q=${q}">Open in Waze</a></div>`;
+      <a class="btn solid" target="_blank" rel="noopener" href="${gmapsDir(s)}">Directions in Google Maps</a>
+      <a class="btn" target="_blank" rel="noopener" href="${wazeDir(s)}">Open in Waze</a></div>`;
 }
 function renderReports() {
     const s = byId(state.sel);
@@ -826,7 +889,7 @@ async function uploadPhoto(file) {
         }));
         user.photosAdded++;
         refreshAll();
-        award(5, 'photo added');
+        award(POINTS.photo, 'photo added');
     }
     catch (ex) {
         err.textContent = ex.message;
@@ -930,11 +993,11 @@ on('reportForm', 'submit', async e => {
         }
         s.updatedAt = Date.now();
 
-        // Points (use the server's total when it is higher, never lower the student's points)
+        // Points
         user.reportsMade++;
-        const gain = (typeof data.points === 'number' && data.points > user.points) ? data.points - user.points : 5;
+        const gain = POINTS.report;
         user.points += gain;
-        track(gain);   // streak and weekly leaderboard
+        track(gain);                                            // streak and weekly leaderboard
 
         toast(`Report submitted! +${gain} points`);
         $('dlgReport').close();
@@ -979,12 +1042,12 @@ on('addForm', 'submit', async e => {
         const description = $('a-desc').value.trim();
         const rules       = $('a-rules').value.trim();
 
-        // small random offset so pins don’t stack exactly on the user’s location
-        const jit = () => (Math.random() - 0.5) * 8;
-        const x = Math.min(94, Math.max(6, state.pos.x + jit()));
-        const y = Math.min(64, Math.max(6, state.pos.y + jit()));
+        // small random offset so pins
+        const jit = () => (Math.random() - 0.5) * 0.0008;       // about 40 m
+        const x = +(state.pos.lng + jit()).toFixed(6);          // longitude
+        const y = +(state.pos.lat + jit()).toFixed(6);          // latitude
 
-        // Send to backend first
+        // Send to backend
         const res = await fetch('/api/add-spot', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1041,7 +1104,7 @@ on('addForm', 'submit', async e => {
         clearFilters();
         state.sel = spot.id;
         refreshAll();
-        award(25, 'new study spot added');
+        award(POINTS.spot, 'new study spot added');
         save();
 
     } catch (ex) {
@@ -1144,17 +1207,6 @@ document.addEventListener('keydown', e => {
         e.preventDefault();
         openSpot(+e.target.dataset.id);
     }
-});
-if ($('map')) $('map').addEventListener('click', e => {
-    if (e.target.closest('.pin'))
-        return;
-    const svg = $('map'), pt = svg.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
-    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
-    state.pos = { x: Math.min(97, Math.max(3, p.x)), y: Math.min(67, Math.max(3, p.y)) };
-    refreshAll();
-    toast('Location updated. Distances recalculated.');
 });
 [
     'q', 'fNoise', 'fCrowd', 'fPrice', 'fSort', 'cWifi', 'cOutlets', 'cOpen', 'cSaved'
@@ -1271,7 +1323,7 @@ function renderFeed() {
         const sc = soc(s), avg = sc.sum / sc.count, fill = Math.round(sc.mine || avg), fav = user.favoriteSpots.has(s.id), d = s.distance(state.pos);
         const real = s.photos.length > 0, img = real ? s.photos[0].src : spotArt(s);
         const stars = [1, 2, 3, 4, 5].map(i => `<button class="star ${i <= fill ? 'on' : ''}" data-act="rate" data-id="${s.id}" data-n="${i}" aria-label="Rate ${i} of 5 stars">★</button>`).join('');
-        const cms = sc.open ? `<div class="cms">${sc.comments.map((m, i) => `<div class="cm ${cmNet(m) <= -3 ? 'low' : ''}"><span class="av">${esc(m.user[0].toUpperCase())}</span><div class="bub"><b>${esc(m.user)}${m.mine ? ' (you)' : ''}</b> <small>${ago(m.ts)}</small><p>${esc(m.text)}</p><span class="cvote" role="group" aria-label="Votes on this comment"><button class="lk" data-act="cm-like" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === 1}" aria-label="Upvote, helpful. ${m.up || 0} upvotes" ${m.mine ? 'disabled' : ''}>▲ ${m.up || 0}</button><button class="lk" data-act="cm-down" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === -1}" aria-label="Downvote, not helpful. ${m.down || 0} downvotes" ${m.mine ? 'disabled' : ''}>▼ ${m.down || 0}</button></span>${m.mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}${cmNet(m) <= -3 ? '<span class="lowtag">Downvoted by students</span>' : ''}</div></div>`).join('')}
+        const cms = sc.open ? `<div class="cms">${sc.comments.map((m, i) => `<div class="cm ${cmNet(m) <= -3 ? 'low' : ''}"><span class="av">${esc(m.user[0].toUpperCase())}</span><div class="bub"><b>${esc(m.user)}${m.mine ? ' (you)' : ''}</b> <small>${ago(m.ts)}</small><p>${esc(m.text)}</p><span class="cvote" role="group" aria-label="Votes on this comment, score ${cmNet(m)}"><button class="lk up" data-act="cm-like" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === 1}" aria-label="Upvote, helpful" ${m.mine ? 'disabled' : ''}>▲</button><span class="cscore ${cmMine(m) === 1 ? 'pos' : cmMine(m) === -1 ? 'neg' : ''}" aria-live="polite">${cmNet(m)}</span><button class="lk down" data-act="cm-down" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === -1}" aria-label="Downvote, not helpful" ${m.mine ? 'disabled' : ''}>▼</button></span>${m.mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}${cmNet(m) <= -3 ? '<span class="lowtag">Downvoted by students</span>' : ''}</div></div>`).join('')}
       <div class="cmrow"><input type="text" class="cm-in" data-id="${s.id}" placeholder="Write feedback about this spot" value="${esc(sc.draft)}" aria-label="Comment on ${esc(s.name)}"><button class="btn solid sm" data-act="cm-post" data-id="${s.id}">Post</button></div></div>` : '';
         return `<article class="card post">
       <header><span class="av">${esc(s.name[0])}</span><div><h3>${esc(s.name)}</h3><small>${esc(s.kind)}${s.isOpen ? '' : ', closed now'} · ${Math.max(1, Math.round(d / 60))} min walk (${d} m)</small></div>${s.isNew ? '<span class="tag solid">New</span>' : ''}</header>
@@ -1293,7 +1345,7 @@ document.addEventListener('click', e => {
             sc.sum -= sc.mine;
         else {
             sc.count++;
-            award(2, 'rating shared');
+            award(POINTS.rating, 'rating shared');
         }
         sc.sum += n;
         sc.mine = n;
@@ -1314,7 +1366,7 @@ document.addEventListener('click', e => {
         sc.draft = '';
         sc.open = true;
         renderFeed();
-        award(3, 'feedback shared');
+        award(POINTS.comment, 'feedback shared');
     }
 });
 document.addEventListener('input', e => { if (e.target.classList.contains('cm-in'))
@@ -1531,7 +1583,7 @@ function save() {
         localStorage.setItem(STORE, JSON.stringify(data));
     }
     catch (e) {
-        try {   // probably too many photos for the browser's storage limit: save everything except photos
+        try {
             data.spots.forEach(x => x.photos = []);
             localStorage.setItem(STORE, JSON.stringify(data));
         }
@@ -1545,7 +1597,7 @@ function loadState() {
     if (!d) return;
     try {
         loggedIn = !!d.loggedIn;
-        if (d.pos) state.pos = d.pos;
+        if (d.pos && Number.isFinite(d.pos.lat) && Number.isFinite(d.pos.lng)) state.pos = d.pos;
         rid = Math.max(rid, d.rid || 1);
         pid = Math.max(pid, d.pid || 1);
         Object.assign(social, d.social || {});
@@ -1555,7 +1607,8 @@ function loadState() {
         user.favoriteSpots = new Set(u.fav || []);
         (d.spots || []).forEach(o => {
             let s = byId(o.id);
-            if (!s) {   // a spot the user added earlier
+            if (!s) {
+                if (!(o.y > 4 && o.y < 22 && o.x > 116 && o.x < 127)) return;
                 s = new (TYPES[o.type] || StudySpot)({ ...o, fac: o.fac });
                 spots.push(s);
             }
@@ -1576,7 +1629,7 @@ window.addEventListener('pagehide', save);
 loadState();
 loadSpotsFromJava().then(ok => {
     if (!ok) return;
-    loadState();   // restore saved photos, reports and added spots AFTER the spots are loaded from Java
+    loadState();
     seedSampleReports();
     document.querySelectorAll('nav.main .pill').forEach(b =>
         b.setAttribute('aria-current', b.dataset.page === CURRENT ? 'page' : 'false')

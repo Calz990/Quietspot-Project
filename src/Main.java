@@ -88,6 +88,7 @@ public class Main {
             }
         });
 
+        // for map pins, x = longitude and y = latitude (decimal degrees).
         // 5. API: GET ALL SPOTS (gamit ang SpotRepository.java)
         server.createContext("/api/spots", exchange -> {
             StringBuilder sb = new StringBuilder("[");
@@ -95,8 +96,8 @@ public class Main {
             for (int i = 0; i < list.size(); i++) {
                 SpotArea s = list.get(i);
                 Facility f = s.getFacility();
-                sb.append(String.format(
-                        "{\"id\":%d,\"type\":\"%s\",\"name\":\"%s\",\"address\":\"%s\",\"x\":%.1f,\"y\":%.1f," +
+                sb.append(String.format(java.util.Locale.ROOT,
+                        "{\"id\":%d,\"type\":\"%s\",\"name\":\"%s\",\"address\":\"%s\",\"x\":%.6f,\"y\":%.6f," +
                         "\"hours\":[%d,%d],\"price\":%.0f,\"noise\":%d,\"crowd\":%d,\"description\":\"%s\",\"rules\":\"%s\"," +
                         "\"fac\":{\"wifi\":%b,\"mbps\":%d,\"outlets\":%b,\"aircon\":%b,\"food\":%b}}",
                         s.getId(), s.getClass().getSimpleName(), esc(s.getName()), esc(s.getAddress()), s.getX(),

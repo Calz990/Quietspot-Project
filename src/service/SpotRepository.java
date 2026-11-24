@@ -58,6 +58,8 @@ public class SpotRepository {
         return results;
     }
 
+    // Coordinates below are x = longitude, y = latitude (used by the Leaflet map).
+    // Libro Espresso and But First, Coffee come from their Plus Codes; the other three are approximate.
     public void loadDefaultSpots() {
         // 1.Libro Espresso
         addSpot(
@@ -65,7 +67,7 @@ public class SpotRepository {
                 nextId(),
                 "Libro Espresso",
                 "Gulod Labac, Batangas City", 
-                82, 56, 
+                121.0698, 13.7899, 
                 new int[] {
                     11, 21
                 }, 
@@ -90,7 +92,7 @@ public class SpotRepository {
                 nextId(),
                 "But First, Coffee",
                 "Alangilan, Batangas City",
-                62, 36,
+                121.0682, 13.7826,
                 new int[]{
                     9, 21
                 },
@@ -115,7 +117,7 @@ public class SpotRepository {
                 nextId(),
                 "BSU Student Area",
                 "BatStateU Alangilan Campus, Golden Country Home",
-                36, 28,
+                121.0738, 13.7846,
                 new int[]{
                     7, 19
                 },
@@ -140,7 +142,7 @@ public class SpotRepository {
                 nextId(),
                 "BSU Library",
                 "2/F College of Engineering Building, BatStateU-Alangilan, Golden Country Homes",
-                44, 20,
+                121.0735, 13.7850,
                 new int[]{
                     7, 19
                 },
@@ -165,7 +167,7 @@ public class SpotRepository {
                 nextId(),
                 "Batangas City Public Library and Information Center",
                 "City Library Building, City Hall Complex, P. Burgos Street, Batangas City",
-                18, 54,
+                121.0583, 13.7565,
                 new int[]{
                     8, 17
                 },
