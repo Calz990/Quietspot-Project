@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>QuietSpot – Account</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Sora:wght@600;700&display=swap" rel="stylesheet">
+  <script>
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('qs-theme'); } catch (e) {}
+    if (t !== 'light' && t !== 'dark') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+  </script>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/profile.css">
+</head>
+<body data-page="account">
+
+<!-- ===== TOP BAR / NAVIGATION ===== -->
+<header class="bar">
+  <div class="in">
+    <div class="logo"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>QuietSpot</div>
+    <nav class="main" aria-label="Main menu">
+      <button class="pill" data-act="go" data-page="home">Home</button>
+      <button class="pill" data-act="go" data-page="feed">Feed</button>
+      <button class="pill" data-act="go" data-page="reco">Reco</button>
+      <button class="pill" data-act="go" data-page="spots">Spots</button>
+      <button class="pill" data-act="go" data-page="dash">Dashboard</button>
+      <button class="pill" data-act="go" data-page="account" aria-current="page">Account</button>
+    </nav>
+    <span class="chip" id="whoChip"></span>
+    <button class="btn sm" id="authBtn" data-act="go" data-page="login">Login</button>
+    <select class="palette" id="palette" aria-label="Color palette">
+      <option value="bw">Black &amp; White</option>
+      <option value="teal">Teal &amp; Navy</option>
+      <option value="blue">Blue &amp; Cream</option>
+      <option value="sage">Sage &amp; Brown</option>
+      <option value="sunset">Sunset Orange</option>
+      <option value="violet">Violet &amp; Pink</option>
+      <option value="ocean">Ocean Blue</option>
+      <option value="rose">Rose &amp; Teal</option>
+    </select>
+    <button class="theme" id="themeBtn" role="switch" aria-checked="false" aria-label="Dark mode">
+      <span class="track"><span class="knob">
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg class="moon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </span></span>
+      <span id="themeLabel">Light</span>
+    </button>
+    <button class="iconbtn" data-act="go" data-page="about" aria-label="About this system">i</button>
+  </div>
+</header>
+
+<!-- ===== ACCOUNT PAGE (profile + rewards + sign-in settings, all in one place) ===== -->
+<section class="page" id="p-account">
+  <div class="wrap pfwrap">
+    <div class="card pfbanner" id="pfBanner" hidden></div>
+    <div class="card pfhead" id="pfHead"></div>
+    <div class="pfgrid">
+      <div class="pfcol" id="pfSide"></div>
+      <div class="pfcol" id="pfMain"></div>
+    </div>
+
+    <div class="card panel" id="dRewards" style="margin-top:18px"></div>
+    <div class="card panel" id="dVerify" style="margin-top:18px"></div>
+
+    <div class="head" style="margin-top:28px"><div><h2>Account settings</h2><p>Change your username or password, or delete your account</p></div></div>
+    <div class="dgrid">
+      <form class="card authform" id="profileForm" novalidate>
+        <h3>Username</h3>
+        <label class="f">Username<input type="text" id="ac-user" maxlength="30"></label>
+        <p class="err" id="acErr" role="alert"></p>
+        <button type="submit" class="btn solid">Save username</button>
+      </form>
+
+      <form class="card authform" id="pwForm" novalidate>
+        <h3>Change password</h3>
+        <input type="password" id="pw-old" placeholder="Current password" aria-label="Current password">
+        <input type="password" id="pw-new" placeholder="New password (6+ characters)" aria-label="New password">
+        <input type="password" id="pw-new2" placeholder="Confirm new password" aria-label="Confirm new password">
+        <p class="err" id="pwErr" role="alert"></p>
+        <button type="submit" class="btn solid">Update password</button>
+      </form>
+    </div>
+
+    <section class="danger-zone" aria-labelledby="dzTitle">
+      <h3 id="dzTitle">Danger Zone</h3>
+      <div class="dz-row">
+        <div>
+          <b>Delete this account</b>
+          <p class="meta">Once you delete your account, there is no going back. Please be certain.</p>
+        </div>
+        <button type="button" class="btn danger" id="delOpen">Delete this account</button>
+      </div>
+    </section>
+  </div>
+</section>
+
+<!-- ===== DIALOGS / POPUPS ===== -->
+<dialog id="dlgSpot" class="wide"><div class="dlg">
+  <div id="dTop"></div><div id="dPhotos"></div><div id="dReports"></div>
+  <div class="foot"><button class="btn" data-close>Close</button></div>
+</div></dialog>
+
+<dialog id="dlgPhoto" class="wide"><div class="dlg lightbox">
+  <img id="lbImg" alt="">
+  <p class="meta" id="lbCap" style="margin-top:10px"></p>
+  <div class="foot"><button class="btn" data-close>Close</button></div>
+</div></dialog>
+
+<dialog id="dlgReport"><form class="dlg" id="reportForm" novalidate></form></dialog>
+
+<dialog id="dlgProfile" class="wide"><form class="dlg" id="pfEditForm" novalidate></form></dialog>
+
+<dialog id="dlgDelete"><form class="dlg stack" id="delForm" novalidate>
+  <h2>Are you absolutely sure?</h2>
+  <div class="dz-warn">This action <b>cannot</b> be undone. It will permanently delete the account <b id="delName"></b> along with its points, badges, streak and favorite spots.</div>
+  <label class="f">Please type <b id="delName2"></b> to confirm.<input type="text" id="del-confirm" autocomplete="off" spellcheck="false"></label>
+  <label class="f">Enter your password<input type="password" id="del-pass" autocomplete="current-password"></label>
+  <p class="err" id="delErr" role="alert"></p>
+  <div class="foot"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn danger" id="delGo" disabled>I understand, delete this account</button></div>
+</form></dialog>
+
+<!-- ===== TOAST (small message popup) ===== -->
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="js/script.js"></script>
+<script src="js/profile.js"></script>
+</body>
+</html>
