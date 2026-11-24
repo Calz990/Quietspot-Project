@@ -10,7 +10,6 @@
 ![Java](https://img.shields.io/badge/Backend-Java_17+-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)
 ![Frontend](https://img.shields.io/badge/Frontend-HTML5_%7C_CSS3_%7C_JS-3178C6?style=for-the-badge&logo=javascript&logoColor=white)
 ![Architecture](https://img.shields.io/badge/Architecture-Object--Oriented-2EA44F?style=for-the-badge)
-![Theme](https://img.shields.io/badge/Theme-Rose_&_Teal-e91e63?style=for-the-badge)
 
 [Features](#-project-features) • [Architecture](#-oop-principles-applied) • [Run Locally](#-how-to-run-the-program) • [Team](#-team-members)
 
