@@ -1,7 +1,7 @@
 <div align="center">
 
 <!-- TIP: Gumawa ng banner sa Canva (1200x400px) gamit ang Rose & Teal theme at i-save sa web/images/banner.png -->
-<img src="web/images/banner.png" alt="QuietSpot Banner" width="100%" />
+<img src="web/images/banner.jpg" alt="QuietSpot Banner" width="100%" />
 
 # QuietSpot
 ### *"Find your focus, skip the crowd."*
