@@ -23,6 +23,7 @@ public class Main {
         repo.loadDefaultSpots();
         try {
             UserAccount demo = auth.register("Charisse", "secret123", UserType.STUDENT);
+            demo.setEmail("charisse@example.com");
             activeUsers.put("charisse", demo);
         } catch (InvalidInputException ignored) {
         }
@@ -57,9 +58,7 @@ public class Main {
             try {
                 UserAccount u = auth.login(data.get("username"), data.get("password"));
                 activeUsers.put(u.getUserName().toLowerCase(), u);
-                String json = String.format("{\"ok\":true,\"userName\":\"%s\",\"userType\":\"%s\",\"points\":%d}",
-                        esc(u.getUserName()), u.getUserType().name(), u.getPoints());
-                sendJson(exchange, 200, json);
+                sendJson(exchange, 200, authJson(u));
             } catch (InvalidInputException e) {
                 sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
             }
@@ -78,11 +77,116 @@ public class Main {
                     } catch (Exception ignored) {
                     }
                 }
-                UserAccount u = auth.register(data.get("username"), data.get("password"), type);
+                UserAccount u = auth.register(data.get("username"), data.get("password"), type, data.get("email"),
+                        data.get("fullName"));
                 activeUsers.put(u.getUserName().toLowerCase(), u);
-                String json = String.format("{\"ok\":true,\"userName\":\"%s\",\"userType\":\"%s\",\"points\":%d}",
-                        esc(u.getUserName()), u.getUserType().name(), u.getPoints());
-                sendJson(exchange, 200, json);
+                sendJson(exchange, 200, authJson(u));
+            } catch (InvalidInputException e) {
+                sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
+            }
+        });
+
+        // API: GET PROFILE (everything shown on the profile page and the setup pages)
+        server.createContext("/api/profile/get", exchange -> {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"ok\":false,\"error\":\"Use POST\"}");
+                return;
+            }
+            Map<String, String> d = parseForm(readBody(exchange));
+            try {
+                UserAccount u = auth.getUser(d.get("username"));
+                sendJson(exchange, 200, profileJson(u));
+            } catch (InvalidInputException e) {
+                sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
+            }
+        });
+
+        // API: SAVE PROFILE (profile setup after sign up + Edit profile). Only the sent fields are changed.
+        server.createContext("/api/profile/save", exchange -> {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"ok\":false,\"error\":\"Use POST\"}");
+                return;
+            }
+            Map<String, String> d = parseForm(readBody(exchange));
+            try {
+                UserAccount u = auth.updateProfile(d.get("username"), d);
+                sendJson(exchange, 200, profileJson(u));
+            } catch (InvalidInputException e) {
+                sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
+            }
+        });
+
+        // API: ACCOUNT DETAILS (email + member since)
+        server.createContext("/api/account/details", exchange -> {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
+                return;
+            Map<String, String> d = parseForm(readBody(exchange));
+            try {
+                UserAccount u = auth.getUser(d.get("username"));
+                sendJson(exchange, 200, String.format(
+                        "{\"ok\":true,\"userName\":\"%s\",\"userType\":\"%s\",\"email\":\"%s\",\"memberSince\":\"%s\"}",
+                        esc(u.getUserName()), u.getUserType().name(), esc(u.getEmail()), esc(u.getCreatedAt())));
+            } catch (InvalidInputException e) {
+                sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
+            }
+        });
+
+        // API: FORGOT PASSWORD (username + email must match, then set a new password)
+        server.createContext("/api/forgot-password", exchange -> {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
+                return;
+            Map<String, String> d = parseForm(readBody(exchange));
+            try {
+                auth.resetPassword(d.get("username"), d.get("email"), d.get("newPassword"));
+                sendJson(exchange, 200, "{\"ok\":true}");
+            } catch (InvalidInputException e) {
+                sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
+            }
+        });
+
+        // API: UPDATE PROFILE (username + user type)
+        server.createContext("/api/account/update", exchange -> {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
+                return;
+            Map<String, String> d = parseForm(readBody(exchange));
+            try {
+                String oldName = d.get("username");
+                UserAccount u = auth.changeUserName(oldName, d.get("newUsername"));
+                try {
+                    u.setUserType(UserType.valueOf(d.get("userType").toUpperCase()));
+                } catch (Exception ignored) {
+                }
+                activeUsers.remove(oldName.trim().toLowerCase());
+                activeUsers.put(u.getUserName().toLowerCase(), u);
+                sendJson(exchange, 200, String.format("{\"ok\":true,\"userName\":\"%s\",\"userType\":\"%s\"}",
+                        esc(u.getUserName()), u.getUserType().name()));
+            } catch (InvalidInputException e) {
+                sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
+            }
+        });
+
+        // API: CHANGE PASSWORD
+        server.createContext("/api/account/password", exchange -> {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
+                return;
+            Map<String, String> d = parseForm(readBody(exchange));
+            try {
+                auth.changePassword(d.get("username"), d.get("oldPassword"), d.get("newPassword"));
+                sendJson(exchange, 200, "{\"ok\":true}");
+            } catch (InvalidInputException e) {
+                sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
+            }
+        });
+
+        // API: DELETE ACCOUNT
+        server.createContext("/api/account/delete", exchange -> {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
+                return;
+            Map<String, String> d = parseForm(readBody(exchange));
+            try {
+                auth.deleteAccount(d.get("username"), d.get("password"));
+                activeUsers.remove(d.get("username").trim().toLowerCase());
+                sendJson(exchange, 200, "{\"ok\":true}");
             } catch (InvalidInputException e) {
                 sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
             }
@@ -191,6 +295,47 @@ public class Main {
     }
 
     // --- Helper Methods ---
+    // Response for login and sign up. setupDone tells the page if the profile setup was already finished.
+    private static String authJson(UserAccount u) {
+        return String.format(
+                "{\"ok\":true,\"userName\":\"%s\",\"userType\":\"%s\",\"points\":%d,\"fullName\":\"%s\",\"setupDone\":%b}",
+                esc(u.getUserName()), u.getUserType().name(), u.getPoints(),
+                esc(u.getProfile().getFullName()), u.getProfile().isSetupDone());
+    }
+
+    // Full profile as JSON (used by /api/profile/get and /api/profile/save).
+    private static String profileJson(UserAccount u) {
+        UserProfile p = u.getProfile();
+        StringBuilder sb = new StringBuilder("{\"ok\":true");
+        sb.append(",\"userName\":\"").append(esc(u.getUserName())).append('"');
+        sb.append(",\"userType\":\"").append(u.getUserType().name()).append('"');
+        sb.append(",\"email\":\"").append(esc(u.getEmail())).append('"');
+        sb.append(",\"memberSince\":\"").append(esc(u.getCreatedAt())).append('"');
+        sb.append(",\"fullName\":\"").append(esc(p.getFullName())).append('"');
+        sb.append(",\"bio\":\"").append(esc(p.getBio())).append('"');
+        sb.append(",\"school\":\"").append(esc(p.getSchool())).append('"');
+        sb.append(",\"course\":\"").append(esc(p.getCourse())).append('"');
+        sb.append(",\"yearLevel\":\"").append(esc(p.getYearLevel())).append('"');
+        sb.append(",\"location\":\"").append(esc(p.getLocation())).append('"');
+        sb.append(",\"birthday\":\"").append(esc(p.getBirthday())).append('"');
+        sb.append(",\"interests\":").append(jsonArray(p.getInterests()));
+        sb.append(",\"studyPrefs\":").append(jsonArray(p.getStudyPrefs()));
+        sb.append(",\"avatar\":\"").append(esc(p.getAvatar())).append('"');
+        sb.append(",\"completion\":").append(p.completion());
+        sb.append(",\"missing\":").append(jsonArray(p.missingItems()));
+        sb.append(",\"setupDone\":").append(p.isSetupDone());
+        return sb.append('}').toString();
+    }
+
+    private static String jsonArray(java.util.List<String> items) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < items.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append('"').append(esc(items.get(i))).append('"');
+        }
+        return sb.append(']').toString();
+    }
+
     private static void openBrowser(String url) {                   // Opens the default browser.
         try {
             if (java.awt.Desktop.isDesktopSupported()
@@ -243,7 +388,7 @@ public class Main {
     }
 
     private static String esc(String s) {
-        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ");
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").replace("\r", " ").replace("\t", " ");
     }
 
     private static String getMimeType(String path) {

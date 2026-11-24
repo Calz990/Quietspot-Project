@@ -1,6 +1,7 @@
 // QuietSpot: script.js 
 // Sections: helpers, model, data, ui, spot-list, dashboard, spot-detail, events,
 // palette, feed, feed-extras, reco, auth, main
+// (profile and profile-setup pages: see profile.js)
 
 // =====================================================
 // helpers.js: Small helper functions used everywhere
@@ -121,6 +122,7 @@ class Report {
     net() { return this.up - this.down; }
 }
 class User {
+    unlocked = new Set();   // ids of badges this student has earned; a badge is never taken back (saved per username, see gameSync)
     constructor(name, type) { this.userName = name; this.userType = type; this.points = 20; this.favoriteSpots = new Set(); this.reportsMade = 0; this.spotsAdded = 0; this.photosAdded = 0; this.streak = 0; this.bestStreak = 0; }
     toggleFavorite(id) { if (this.favoriteSpots.has(id)) {
         this.favoriteSpots.delete(id);
@@ -128,7 +130,11 @@ class User {
     } this.favoriteSpots.add(id); return true; }
     badges() {
         // have/need drive the progress bar on locked badges in the shelf
-        const b = (id, name, desc, icon, have, need) => ({ id, name, desc, icon, have: Math.min(have, need), need, earned: have >= need });
+        // earned stays true once it was reached, even if the number later drops (for example after un-favoriting a spot)
+        const b = (id, name, desc, icon, have, need) => {
+            const earned = have >= need || this.unlocked.has(id);
+            return { id, name, desc, icon, have: earned ? need : Math.min(have, need), need, earned };
+        };
         return [
             b('first', 'First report', 'Send your first update', 'chat', this.reportsMade, 1),
             b('scout', 'Spot scout', 'Add a new study spot', 'pin', this.spotsAdded, 1),
@@ -311,7 +317,8 @@ function renderChip() {
 // Which file each page name opens. Navigation now opens another HTML file.
 const PAGE_FILES = {
     home: 'index.html', feed: 'feed.html', reco: 'reco.html', spots: 'spots.html',
-    dash: 'dashboard.html', about: 'about.html', login: 'login.html', signup: 'signup.html'
+    dash: 'dashboard.html', account: 'account.html', about: 'about.html', login: 'login.html', signup: 'signup.html',
+    setup: 'setup-profile.html'
 };
 function go(page, msg) {
     if (!PUBLIC_PAGES.includes(page) && !loggedIn) {
@@ -502,7 +509,7 @@ function G() {
         gameFor = user.userName;
         let all = {};
         try { all = JSON.parse(localStorage.getItem(GAME_KEY)) || {}; } catch (e) { }
-        game = Object.assign({ last: '', streak: 0, best: 0, days: [], wk: '', wkPts: 0, log: null, lvl: null, seen: null, fresh: [] }, all[gameFor] || {});
+        game = Object.assign({ last: '', streak: 0, best: 0, days: [], wk: '', wkPts: 0, log: null, lvl: null, seen: null, unlocked: [], fresh: [] }, all[gameFor] || {});
         if (!game.log) game.log = game.wkPts > 0 ? [{ t: Date.now(), n: game.wkPts }] : [];                                         // older saves had only a weekly total
     }
     const wk = dayKey(weekStart());
@@ -541,6 +548,7 @@ function gameSync() {
     const g = G();
     user.streak = g.streak;
     user.bestStreak = g.best;
+    user.unlocked = new Set(g.unlocked || []);   // badges earned earlier stay unlocked
     const all = user.badges(), earned = all.filter(b => b.earned).map(b => b.id), lvl = levelOf(user.points).idx;
     if (g.seen === null) { g.seen = earned; g.lvl = lvl; }   // first visit: record what they already have, no popups
     else {
@@ -552,6 +560,8 @@ function gameSync() {
         g.seen = earned;
         g.lvl = lvl;
     }
+    g.unlocked = earned;   // remember every earned badge for good (earned only ever grows)
+    user.unlocked = new Set(earned);
     gameSave();
     renderChip();
 }
@@ -767,7 +777,13 @@ function renderRewards() {
     <h3 class="sec">Badge shelf (${earnedN} of ${user.badges().length})</h3>
     <div class="shelf">${shelf}</div>`;
 }
-function renderDash() { if (!$('stats')) return; renderStats(); renderProfilePanel(); renderPicks(); renderRewards(); }
+function renderDash() {
+    if ($('stats')) renderStats();
+    if ($('dProfile')) renderProfilePanel();
+    if ($('dVerify')) renderPicks();
+    if ($('dRewards')) renderRewards();
+    if ($('acDetails')) renderAccountDetails();
+}
 
 // =====================================================
 // spot-detail.js: Spot detail popup, status reports, 
@@ -1468,16 +1484,16 @@ function requireLogin(message, backTo) {
     go('login', message);
     return false;
 }
-function authDone(name) {
+function authDone(name, opts = {}) {   // opts.isNew is true right after sign up
     user = new User(name, 'Student');
     loggedIn = true;
     const b = $('authBtn');
     b.textContent = 'Logout';
     b.dataset.act = 'logout';
     refreshAll();
-    const dest = nextPage;
+    const dest = opts.isNew ? 'setup' : nextPage;   // a new account sets up its profile first (like Facebook)
     nextPage = 'home';
-    go(dest, `Welcome, ${name}!`);
+    go(dest, opts.isNew ? `Welcome to QuietSpot, ${name}! Let's set up your profile.` : `Welcome, ${name}!`);
 }
 document.addEventListener('click', e => {
     if (!e.target.closest('[data-act="logout"]')) return;
@@ -1527,17 +1543,174 @@ on('signupForm', 'submit', async e => {
     try {
         const res = await fetch('/api/signup', {
             method: 'POST',
-            body: new URLSearchParams({ username: u, password: p, userType: 'STUDENT' })
+            body: new URLSearchParams({ username: u, password: p, userType: 'STUDENT', email: $('s-mail').value.trim(), fullName: n })
         });
         const data = await res.json();
         if (!data.ok) {
             $('sErr').textContent = data.error;
             return;
         }
-        authDone(data.userName);
+        authDone(data.userName, { isNew: true });
     } catch (err) {
         $('sErr').textContent = 'Cannot connect to Java server. Make sure Main.java is running.';
     }
+});
+
+// =====================================================
+// account.js: Account page settings: change username,
+// password, and delete account. (The profile part of the
+// page is in profile.js.)
+// =====================================================
+
+let accountInfo = null;
+const capWord = w => String(w).charAt(0).toUpperCase() + String(w).slice(1).toLowerCase();
+function renderAccountDetails() {
+    const box = $('acDetails');
+    if (!box) return;
+    const L = levelOf(user.points), info = accountInfo || {};
+    let since = '-';
+    if (info.memberSince) {
+        const d = new Date(info.memberSince + 'T00:00:00');
+        since = isNaN(d) ? info.memberSince : d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    }
+    const rows = [
+        ['Username', user.userName], ['Account type', capWord(user.userType)],
+        ['Email', info.email || 'Not provided'], ['Member since', since],
+        ['Level', `Level ${L.idx + 1}, ${L.cur.n}`], ['Points', `${user.points} pts`],
+        ['Reports sent', user.reportsMade], ['Spots added', user.spotsAdded],
+        ['Photos shared', user.photosAdded], ['Favorite spots', user.favoriteSpots.size]
+    ];
+    box.innerHTML = `<h3>Account details</h3><dl class="det acdet">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
+}
+function fillAccount() {
+    if ($('ac-user')) $('ac-user').value = user.userName;
+}
+// Save the game state to localStorage under the current username.
+function migrateGame(from, to) {
+    if (from === to) return;
+    try {
+        if (game && gameFor === from) gameSave();
+        const all = JSON.parse(localStorage.getItem(GAME_KEY)) || {};
+        if (all[from]) { all[to] = all[from]; delete all[from]; localStorage.setItem(GAME_KEY, JSON.stringify(all)); }
+    } catch (e) { }
+    gameFor = null;
+}
+const NO_SERVER = 'Cannot connect to Java server. Make sure Main.java is running.';
+
+on('profileForm', 'submit', async e => {
+    e.preventDefault();
+    $('acErr').textContent = '';
+    try {
+        const res = await fetch('/api/account/update', {
+            method: 'POST',
+            body: new URLSearchParams({
+                username: user.userName,
+                newUsername: $('ac-user').value.trim(),
+                userType: String(user.userType).toUpperCase()
+            })
+        });
+        const data = await res.json();
+        if (!data.ok) { $('acErr').textContent = data.error; return; }
+        migrateGame(user.userName, data.userName);
+        user.userName = data.userName;
+        user.userType = data.userType.charAt(0) + data.userType.slice(1).toLowerCase();
+        if (typeof PF !== 'undefined' && PF) { PF.userName = user.userName; pfRender(); }   // profile header shows the new @username
+        refreshAll();
+        toast('Username updated.');
+    } catch (err) { $('acErr').textContent = NO_SERVER; }
+});
+
+on('pwForm', 'submit', async e => {
+    e.preventDefault();
+    $('pwErr').textContent = '';
+    if ($('pw-new').value !== $('pw-new2').value) {
+        $('pwErr').textContent = 'New passwords do not match.';
+        return;
+    }
+    try {
+        const res = await fetch('/api/account/password', {
+            method: 'POST',
+            body: new URLSearchParams({
+                username: user.userName,
+                oldPassword: $('pw-old').value,
+                newPassword: $('pw-new').value
+            })
+        });
+        const data = await res.json();
+        if (!data.ok) { $('pwErr').textContent = data.error; return; }
+        $('pwForm').reset();
+        toast('Password updated.');
+    } catch (err) { $('pwErr').textContent = NO_SERVER; }
+});
+
+// Delete Account: user must type their username and password to confirm deletion.
+function delRefresh() {
+    $('delGo').disabled = !($('del-confirm').value === user.userName && $('del-pass').value.length > 0);
+}
+on('delOpen', 'click', () => {
+    $('del-confirm').value = '';
+    $('del-pass').value = '';
+    $('delErr').textContent = '';
+    $('delName').textContent = user.userName;
+    $('delName2').textContent = user.userName;
+    delRefresh();
+    $('dlgDelete').showModal();
+});
+on('del-confirm', 'input', delRefresh);
+on('del-pass', 'input', delRefresh);
+on('delForm', 'submit', async e => {
+    e.preventDefault();
+    $('delErr').textContent = '';
+    if ($('del-confirm').value !== user.userName) return;
+    try {
+        const res = await fetch('/api/account/delete', {
+            method: 'POST',
+            body: new URLSearchParams({ username: user.userName, password: $('del-pass').value })
+        });
+        const data = await res.json();
+        if (!data.ok) { $('delErr').textContent = data.error; return; }
+        try {
+            const all = JSON.parse(localStorage.getItem(GAME_KEY)) || {};
+            delete all[user.userName];
+            localStorage.setItem(GAME_KEY, JSON.stringify(all));
+        } catch (x) { }
+        gameFor = null;
+        loggedIn = false;
+        user = new User('Guest', 'Student');
+        go('home', 'Your account was deleted.');
+    } catch (err) { $('delErr').textContent = NO_SERVER; }
+});
+
+// Forgot Password: user can reset their password by providing their username, email, and new password.
+on('forgotBtn', 'click', () => {
+    $('fp-user').value = $('l-user') ? $('l-user').value.trim() : '';
+    ['fp-mail', 'fp-new', 'fp-new2'].forEach(id => $(id).value = '');
+    $('fpErr').textContent = '';
+    $('dlgForgot').showModal();
+});
+on('forgotForm', 'submit', async e => {
+    e.preventDefault();
+    $('fpErr').textContent = '';
+    if ($('fp-new').value !== $('fp-new2').value) {
+        $('fpErr').textContent = 'New passwords do not match.';
+        return;
+    }
+    try {
+        const res = await fetch('/api/forgot-password', {
+            method: 'POST',
+            body: new URLSearchParams({
+                username: $('fp-user').value.trim(),
+                email: $('fp-mail').value.trim(),
+                newPassword: $('fp-new').value
+            })
+        });
+        const data = await res.json();
+        if (!data.ok) { $('fpErr').textContent = data.error; return; }
+        $('l-user').value = $('fp-user').value.trim();
+        $('l-pass').value = '';
+        $('dlgForgot').close();
+        toast('Password reset. You can log in now.');
+    } catch (err) { $('fpErr').textContent = NO_SERVER; }
 });
 
 // Sample reports from other students, added once per browser so the voting
@@ -1647,6 +1820,8 @@ loadSpotsFromJava().then(ok => {
         refreshAll();
         fillHours();
         if (CURRENT === 'reco') renderReco();
+        if (CURRENT === 'account') fillAccount();
+        if (CURRENT === 'account' || CURRENT === 'setup') initProfilePage();   // defined in profile.js
 
         let flash = null, wantAdd = false;
         try {

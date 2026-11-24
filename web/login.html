@@ -29,6 +29,7 @@
       <button class="pill" data-act="go" data-page="reco">Reco</button>
       <button class="pill" data-act="go" data-page="spots">Spots</button>
       <button class="pill" data-act="go" data-page="dash">Dashboard</button>
+      <button class="pill" data-act="go" data-page="account">Account</button>
     </nav>
     <span class="chip" id="whoChip"></span>
     <button class="btn sm" id="authBtn" data-act="go" data-page="login">Login</button>
@@ -58,11 +59,24 @@
   <div class="wrap authwrap"><form class="card authform" id="loginForm" novalidate>
     <h2>Login to QuietSpot</h2>
     <input type="text" id="l-user" placeholder="Username" aria-label="Username"><input type="password" id="l-pass" placeholder="Password" aria-label="Password">
+    <button type="button" class="linkbtn" id="forgotBtn">Forgot password?</button>
     <p class="err" id="lErr" role="alert"></p>
     <button type="submit" class="btn solid">Login</button>
     <button type="button" class="btn" data-act="go" data-page="signup">Sign up</button><button type="button" class="btn" data-act="go" data-page="home">Back To Home</button>
   </form></div>
 </section>
+
+<!-- ===== FORGOT PASSWORD DIALOG ===== -->
+<dialog id="dlgForgot"><form class="dlg stack" id="forgotForm" novalidate>
+  <h2>Reset your password</h2>
+  <p class="sub">Enter your username and the email you signed up with, then choose a new password.</p>
+  <input type="text" id="fp-user" placeholder="Username" aria-label="Username">
+  <input type="text" id="fp-mail" placeholder="Email" aria-label="Email">
+  <input type="password" id="fp-new" placeholder="New password (6+ characters)" aria-label="New password">
+  <input type="password" id="fp-new2" placeholder="Confirm new password" aria-label="Confirm new password">
+  <p class="err" id="fpErr" role="alert"></p>
+  <div class="foot"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn solid">Reset password</button></div>
+</form></dialog>
 
 <!-- ===== TOAST (small message popup) ===== -->
 <div id="toast" role="status" aria-live="polite"></div>

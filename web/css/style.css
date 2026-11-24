@@ -2778,3 +2778,20 @@ ol.wk {
 .leaflet-container { font-family: var(--body); }
 .mapcard .leaflet-control-attribution svg { width: 12px; height: 8px; display: inline; border: 0; border-radius: 0; background: none; cursor: auto; }
 :root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9); }
+
+/* ===== Account page: details, forgot password link, danger zone ===== */
+:root { --danger: #CF222E; --danger-bg: rgba(207,34,46,.08); }
+:root[data-theme="dark"] { --danger: #FF6B6B; --danger-bg: rgba(255,107,107,.12); }
+.acard { padding: 24px; margin-bottom: 18px; }
+dl.det.acdet { grid-template-columns: 160px 1fr; margin: 12px 0 0; }
+.dlg.stack { display: flex; flex-direction: column; gap: 12px; }
+.linkbtn { background: none; border: 0; padding: 0; align-self: flex-start; font: inherit; font-size: .9rem; font-weight: 700; color: var(--muted); text-decoration: underline; cursor: pointer; }
+.linkbtn:hover { color: var(--ink); }
+.danger-zone { margin-top: 18px; border: 1px solid var(--danger); border-radius: 14px; overflow: hidden; background: var(--surface); }
+.danger-zone h3 { margin: 0; padding: 14px 20px; color: var(--danger); border-bottom: 1px solid var(--danger); }
+.dz-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 20px; }
+.dz-row p { margin: 2px 0 0; }
+.btn.danger { background: var(--surface); color: var(--danger); border: 2px solid var(--danger); }
+.btn.danger:hover:not(:disabled) { background: var(--danger); color: #fff; }
+.btn.danger:disabled { opacity: .5; cursor: not-allowed; }
+.dz-warn { background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 10px; padding: 12px 14px; font-size: .92rem; }

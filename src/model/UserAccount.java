@@ -3,6 +3,7 @@ package model;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -18,6 +19,9 @@ public class UserAccount {
     private int reportsMade;
     private int spotsAdded;
     private int photosAdded;
+    private String email;
+    private String createdAt;
+    private final UserProfile profile;   // name, photos, bio, school details, preferences
 
     // Constructor Overloading: Default User
     public UserAccount(String userName, String password) {
@@ -31,11 +35,24 @@ public class UserAccount {
         this.passwordHash = hash(password);
         this.points = INITIAL_POINTS;
         this.favoriteSpots = new HashSet<>();
+        this.createdAt = LocalDate.now().toString();
+        this.profile = new UserProfile(userName);   // full name starts as the username until the person sets one
     }
 
     public boolean checkPassword(String password) {
         return this.passwordHash.equals(hash(password));
     }
+
+    public void setPassword(String password) {
+        this.passwordHash = hash(password);
+    }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getCreatedAt() { return createdAt; }
+
+    public UserProfile getProfile() { return profile; }
 
     private String hash(String password) {
         try {
