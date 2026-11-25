@@ -115,11 +115,27 @@ class CoworkingSpace extends StudySpot {
     extraInfo() { return 'Day and hourly passes may be offered.'; }
 }
 const TYPES = { Cafe, Library, StudyRoom, CoworkingSpace };
+// Who is using the page right now. Ownership and votes are kept PER USERNAME (never as a flag on the item),
+// so a different account on the same browser never inherits another account's votes, ratings or "(you)" labels.
+const meKey = () => (loggedIn ? String(user.userName).toLowerCase() : '');
+const isMe = name => !!name && loggedIn && String(name).toLowerCase() === meKey();
+let LEGACY_OWNER = '';   // username that was saved with data from before votes were kept per account
 class Photo {
-    constructor(o) { Object.assign(this, { caption: '', mine: false }, o); }
+    constructor(o) {
+        const { mine, ...rest } = o;   // old saved photos carry a mine flag: ownership is now worked out from the username
+        Object.assign(this, { caption: '', user: 'QuietSpot' }, rest);
+    }
+    get mine() { return isMe(this.user); }
 }
 class Report {
-    constructor(o) { Object.assign(this, { note: '', up: 0, down: 0, mine: false, myVote: 0 }, o); }
+    constructor(o) {
+        const { mine, myVote, votes, ...rest } = o;
+        Object.assign(this, { note: '', up: 0, down: 0 }, rest);
+        // votes: { username: 1 or -1 }. A vote saved by the old version belongs to the account that was saved with it.
+        this.votes = votes || (myVote && LEGACY_OWNER ? { [LEGACY_OWNER]: myVote } : {});
+    }
+    get mine() { return isMe(this.user); }
+    get myVote() { return this.votes[meKey()] || 0; }
     net() { return this.up - this.down; }
 }
 class User {
@@ -244,12 +260,13 @@ async function loadSpotsFromJava() {
         spots.forEach(s => {
             const src = photoMap[s.name];
             if (src) {
-                s.photos = [{
+                s.photos = [new Photo({
                     id: pid++,
                     src: src,
                     caption: s.name,
-                    mine: false
-                }];
+                    user: 'QuietSpot',
+                    ts: Date.now()
+                })];
             }
         });
 
@@ -623,7 +640,7 @@ function nextCelebration() {
 // leaderboard, verification.
 // =====================================================
 
-const verdict = r => r.net() >= 3 ? 'Verified' : r.net() <= -1 ? 'Disputed' : 'Needs votes';
+const verdict = r => r.net() >= 3 ? 'Verified' : r.net() <= -1 ? 'Disputed' : 'Comment';
 function busyBars(s) {
     const nowH = new Date().getHours();
     return s.busy.map((v, i) => { const h = 8 + i; return `<div class="${h === nowH ? 'now' : ''}" title="${fmtHour(h)}: ${v}% busy"><b style="height:${Math.max(6, v * .72)}px"></b><span>${i % 2 === 0 ? shortHour(h) : ' '}</span></div>`; }).join('');
@@ -846,20 +863,37 @@ function renderTop() {
       <a class="btn solid" target="_blank" rel="noopener" href="${gmapsDir(s)}">Directions in Google Maps</a>
       <a class="btn" target="_blank" rel="noopener" href="${wazeDir(s)}">Open in Waze</a></div>`;
 }
+function detailReportHTML(r) {
+    return `<div class="report"><div>
+      <p><strong>${esc(r.user)}${r.mine ? ' (you)' : ''}</strong> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span> <span class="meta">${ago(r.ts)}</span></p>
+      <p class="meta">${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd${r.net() < 3 && r.net() > -1 ? `. Needs ${3 - r.net()} more ${3 - r.net() === 1 ? 'upvote' : 'upvotes'} to be verified` : ''}</p>${r.note ? `<p>${esc(r.note)}</p>` : ''}</div>
+      <div class="votes" aria-label="Is this report accurate?">
+        <button data-act="vote" data-id="${r.id}" data-dir="1" aria-pressed="${r.myVote === 1}" aria-label="Upvote, report is accurate">▲</button>
+        <span>${r.net()}</span>
+        <button data-act="vote" data-id="${r.id}" data-dir="-1" aria-pressed="${r.myVote === -1}" aria-label="Downvote, report is not accurate">▼</button>
+      </div></div>`;
+}
+function detailCommentHTML(s, m, i) {
+    const mine = isMe(m.user);
+    return `<div class="report"><div>
+      <p><strong>${esc(m.user)}${mine ? ' (you)' : ''}</strong> <span class="tag ${cmNet(m) >= 3 ? 'solid' : ''}" style="margin-left:4px">${cmVerdict(m)}</span> <span class="meta">${ago(m.ts)}</span></p>
+      ${cmNeedsMsg(m) ? `<p class="meta">Comment. ${cmNeedsMsg(m)}</p>` : ''}<p>${esc(m.text)}</p>${mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}</div>
+      <div class="votes" aria-label="Is this comment helpful?">
+        <button data-act="cm-like" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === 1}" aria-label="Upvote, helpful">▲</button>
+        <span>${cmNet(m)}</span>
+        <button data-act="cm-down" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === -1}" aria-label="Downvote, not helpful">▼</button>
+      </div></div>`;
+}
 function renderReports() {
     const s = byId(state.sel);
     if (!s)
         return;
-    $('dReports').innerHTML = `<h3 class="sec" style="margin-top:22px">Recent reports</h3>` +
-        (s.reports.length ? s.reports.map(r => `<div class="report"><div>
-      <p><strong>${esc(r.user)}${r.mine ? ' (you)' : ''}</strong> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span> <span class="meta">${ago(r.ts)}</span></p>
-      <p class="meta">${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd${r.net() < 3 && r.net() > -1 ? `. Needs ${3 - r.net()} more ${3 - r.net() === 1 ? 'upvote' : 'upvotes'} to be verified` : ''}</p>${r.note ? `<p>${esc(r.note)}</p>` : ''}</div>
-      <div class="votes" aria-label="Is this report accurate?">
-        <button data-act="vote" data-id="${r.id}" data-dir="1" aria-pressed="${r.myVote === 1}" aria-label="Upvote, report is accurate" ${r.mine ? 'disabled' : ''}>▲</button>
-        <span>${r.net()}</span>
-        <button data-act="vote" data-id="${r.id}" data-dir="-1" aria-pressed="${r.myVote === -1}" aria-label="Downvote, report is not accurate" ${r.mine ? 'disabled' : ''}>▼</button>
-      </div></div>`).join('') : '<div class="empty">No reports yet. Be the first to send an update.</div>') +
-        ``;
+    // Reports and comments in one list, newest first (same items as the Feed).
+    const items = s.reports.map(r => ({ ts: r.ts, html: detailReportHTML(r) }));
+    soc(s).comments.forEach((m, i) => items.push({ ts: m.ts, html: detailCommentHTML(s, m, i) }));
+    items.sort((x, y) => y.ts - x.ts);
+    $('dReports').innerHTML = `<h3 class="sec" style="margin-top:22px">Recent reports and comments</h3>` +
+        (items.length ? items.map(x => x.html).join('') : '<div class="empty">No reports yet. Be the first to send an update.</div>');
 }
 function renderPhotos(keepErr) {
     const s = byId(state.sel);
@@ -927,7 +961,7 @@ async function uploadPhoto(file) {
     try {
         const src = await loadImage(file);
         s.addPhoto(new Photo({
-            id: pid++, user: user.userName, mine: true, src, caption: $('ph-cap').value.trim(), ts: Date.now()
+            id: pid++, user: user.userName, src, caption: $('ph-cap').value.trim(), ts: Date.now()
         }));
         user.photosAdded++;
         refreshAll();
@@ -1018,7 +1052,8 @@ on('reportForm', 'submit', async e => {
             user: user.userName,
             noise, crowd, note,
             ts: Date.now(),
-            up: 0, down: 0, mine: true
+            up: 1, down: 0,
+            votes: { [meKey()]: 1 }   // your own report starts with your upvote
         });
         s.reports.unshift(report);
 
@@ -1133,7 +1168,7 @@ on('addForm', 'submit', async e => {
         // Attach the chosen photo (if any) to the new spot
         if (addPhotoSrc) {
             spot.addPhoto(new Photo({
-                id: pid++, user: user.userName, mine: true, src: addPhotoSrc, caption: name, ts: Date.now()
+                id: pid++, user: user.userName, src: addPhotoSrc, caption: name, ts: Date.now()
             }));
             user.photosAdded++;
         }
@@ -1162,14 +1197,16 @@ function vote(id, dir) {
     if (!found)
         return;
     const { s, r } = found;
-    if (r.myVote === 1)
+    const cur = r.myVote;
+    if (cur === 1)
         r.up--;
-    if (r.myVote === -1)
+    if (cur === -1)
         r.down--;
-    r.myVote = r.myVote === dir ? 0 : dir;
-    if (r.myVote === 1)
+    const next = cur === dir ? 0 : dir;
+    if (next === 0) delete r.votes[meKey()]; else r.votes[meKey()] = next;
+    if (next === 1)
         r.up++;
-    if (r.myVote === -1)
+    if (next === -1)
         r.down++;
     if (r.net() <= -3) {
         s.reports = s.reports.filter(x => x !== r);
@@ -1304,26 +1341,29 @@ const hsh = s => [...s.name].reduce((a, c) => a + c.charCodeAt(0), 0);
 function soc(s) {
     if (!social[s.id]) {
         const h = hsh(s), count = 18 + h % 60, avg = 3.8 + (h % 11) / 10;
-        const names = ['Mika', 'Jen', 'Paolo', 'Ana', 'Rico', 'Lea'];
-        const lines = [
-            'Tahimik dito, sakto pang review.', 'Maraming outlet, pero minsan puno na pag hapon.', 'Okay ang Wi-Fi at malamig ang aircon.', 'Sulit, at mabilis ang update ng mga reports.', 'Medyo maingay pag lunch break.', 'Maganda pumunta bago mag 10 am.'
-        ];
-        social[s.id] = {
-            sum: Math.round(avg * count), count, mine: 0, open: false, draft: '',
-            comments: [0, 1].map(i => ({
-                user: names[(h + i * 2) % 6], text: lines[(h + i * 3) % 6], ts: Date.now() - (h % 50 + 5 + i * 37) * 60000
-            }))
-        };
+        // sum and count are the ratings from other students (sample numbers). rates holds each account's own rating.
+        social[s.id] = { sum: Math.round(avg * count), count, rates: {}, open: false, draft: '', comments: [], v2: true };
     }
-    social[s.id].comments.forEach((m, i) => {   // sample votes from other students, set once
-        if (!m.mine && m.up === undefined && m.down === undefined) {
-            const h = hsh(s);
-            m.up = 1 + (h + i * 5) % 8;
-            m.down = (h + i * 3) % 3;
-        }
-    });
-    return social[s.id];
+    return socUpgrade(social[s.id]);
 }
+function socUpgrade(e) {
+    if (!e.v2) {   // data saved by the old version
+        // The sample comments are gone: the feed now shows this spot's real reports (same list as in Details).
+        // Only comments a student really typed (they had mine: true) are kept, under the name that wrote them.
+        e.comments = (e.comments || []).filter(m => m.mine).map(m => {
+            const o = { user: m.user, text: m.text, ts: m.ts, up: m.up || 0, down: m.down || 0, votes: {} };
+            const v = m.vote ?? (m.liked ? 1 : 0);
+            if (v && LEGACY_OWNER) o.votes[LEGACY_OWNER] = v;
+            return o;
+        });
+        e.rates = {};
+        if (e.mine && LEGACY_OWNER) e.rates[LEGACY_OWNER] = e.mine;
+        delete e.mine;
+        e.v2 = true;
+    }
+    return e;
+}
+const myRate = sc => (sc.rates || {})[meKey()] || 0;
 function spotArt(s) {
     const h = hsh(s) % 360, k = s.kind + ' ' + s.name, t = /caf|coffee|espresso|food|resto/i.test(k) ? 'c' : /lib|study room|reading/i.test(k) ? 'l' : 'd';
     const c = (l, sat) => `hsl(${h} ${sat || 40}% ${l}%)`;
@@ -1346,8 +1386,10 @@ function spotArt(s) {
     return 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400">${g}</svg>`);
 }
 // Comment votes: m.up and m.down are totals, m.vote is this student's own vote (1, -1 or 0).
-const cmMine = m => m.vote ?? (m.liked ? 1 : 0);
+const cmMine = m => (m.votes || {})[meKey()] || 0;
 const cmNet = m => (m.up || 0) - (m.down || 0);
+const cmVerdict = m => cmNet(m) >= 3 ? 'Verified' : cmNet(m) <= -1 ? 'Disputed' : 'Comment';
+const cmNeedsMsg = m => cmNet(m) < 3 && cmNet(m) > -1 ? `Needs ${3 - cmNet(m)} more ${3 - cmNet(m) === 1 ? 'upvote' : 'upvotes'} to be verified` : '';
 function cmVote(m, dir) {
     const cur = cmMine(m);
     if (cur === 1) m.up = (m.up || 0) - 1;
@@ -1355,8 +1397,25 @@ function cmVote(m, dir) {
     const next = cur === dir ? 0 : dir;
     if (next === 1) m.up = (m.up || 0) + 1;
     if (next === -1) m.down = (m.down || 0) + 1;
-    m.vote = next;
-    delete m.liked;
+    m.votes = m.votes || {};
+    if (next === 0) delete m.votes[meKey()]; else m.votes[meKey()] = next;
+}
+// One list for the Feed: the spot's reports (the same ones as "Recent reports" in Details, same votes)
+// plus the comments students typed. Newest first.
+function feedReportHTML(r) {
+    const mine = r.mine, v = r.myVote;
+    return `<div class="cm"><span class="av">${esc(r.user[0].toUpperCase())}</span><div class="bub"><b>${esc(r.user)}${mine ? ' (you)' : ''}</b> <small>${ago(r.ts)}</small> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span>
+      <p>${esc(r.note || `${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd`)}</p>${r.note ? `<p class="meta" style="margin:0 0 4px">${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd</p>` : ''}
+      <span class="cvote" role="group" aria-label="Is this report accurate? Score ${r.net()}"><button class="lk up" data-act="vote" data-id="${r.id}" data-dir="1" aria-pressed="${v === 1}" aria-label="Upvote, report is accurate">▲</button><span class="cscore ${v === 1 ? 'pos' : v === -1 ? 'neg' : ''}" aria-live="polite">${r.net()}</span><button class="lk down" data-act="vote" data-id="${r.id}" data-dir="-1" aria-pressed="${v === -1}" aria-label="Downvote, report is not accurate">▼</button></span></div></div>`;
+}
+function feedCommentHTML(s, m, i) {
+    const mine = isMe(m.user);
+    return `<div class="cm ${cmNet(m) <= -3 ? 'low' : ''}"><span class="av">${esc(m.user[0].toUpperCase())}</span><div class="bub"><b>${esc(m.user)}${mine ? ' (you)' : ''}</b> <small>${ago(m.ts)}</small> <span class="tag ${cmNet(m) >= 3 ? 'solid' : ''}" style="margin-left:4px">${cmVerdict(m)}</span><p>${esc(m.text)}</p><span class="cvote" role="group" aria-label="Votes on this comment, score ${cmNet(m)}"><button class="lk up" data-act="cm-like" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === 1}" aria-label="Upvote, helpful">▲</button><span class="cscore ${cmMine(m) === 1 ? 'pos' : cmMine(m) === -1 ? 'neg' : ''}" aria-live="polite">${cmNet(m)}</span><button class="lk down" data-act="cm-down" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === -1}" aria-label="Downvote, not helpful">▼</button></span>${mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}${cmNet(m) <= -3 ? '<span class="lowtag">Downvoted by students</span>' : ''}</div></div>`;
+}
+function feedItems(s, sc) {
+    const items = s.reports.map(r => ({ ts: r.ts, html: feedReportHTML(r) }));
+    sc.comments.forEach((m, i) => items.push({ ts: m.ts, html: feedCommentHTML(s, m, i) }));
+    return items.sort((x, y) => y.ts - x.ts);
 }
 function renderFeed() {
     if (!$('feed')) return;
@@ -1368,17 +1427,17 @@ function renderFeed() {
         return;
     }
     $('feed').innerHTML = list.map(s => {
-        const sc = soc(s), avg = sc.sum / sc.count, fill = Math.round(sc.mine || avg), fav = user.favoriteSpots.has(s.id), d = s.distance(state.pos);
+        const sc = soc(s), avg = sc.sum / sc.count, fill = Math.round(myRate(sc) || avg), fav = user.favoriteSpots.has(s.id), d = s.distance(state.pos);
         const real = s.photos.length > 0, img = real ? s.photos[0].src : spotArt(s);
         const stars = [1, 2, 3, 4, 5].map(i => `<button class="star ${i <= fill ? 'on' : ''}" data-act="rate" data-id="${s.id}" data-n="${i}" aria-label="Rate ${i} of 5 stars">★</button>`).join('');
-        const cms = sc.open ? `<div class="cms">${sc.comments.map((m, i) => `<div class="cm ${cmNet(m) <= -3 ? 'low' : ''}"><span class="av">${esc(m.user[0].toUpperCase())}</span><div class="bub"><b>${esc(m.user)}${m.mine ? ' (you)' : ''}</b> <small>${ago(m.ts)}</small><p>${esc(m.text)}</p><span class="cvote" role="group" aria-label="Votes on this comment, score ${cmNet(m)}"><button class="lk up" data-act="cm-like" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === 1}" aria-label="Upvote, helpful" ${m.mine ? 'disabled' : ''}>▲</button><span class="cscore ${cmMine(m) === 1 ? 'pos' : cmMine(m) === -1 ? 'neg' : ''}" aria-live="polite">${cmNet(m)}</span><button class="lk down" data-act="cm-down" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === -1}" aria-label="Downvote, not helpful" ${m.mine ? 'disabled' : ''}>▼</button></span>${m.mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}${cmNet(m) <= -3 ? '<span class="lowtag">Downvoted by students</span>' : ''}</div></div>`).join('')}
+        const cms = sc.open ? `<div class="cms">${feedItems(s, sc).map(it => it.html).join('')}
       <div class="cmrow"><input type="text" class="cm-in" data-id="${s.id}" placeholder="Write feedback about this spot" value="${esc(sc.draft)}" aria-label="Comment on ${esc(s.name)}"><button class="btn solid sm" data-act="cm-post" data-id="${s.id}">Post</button></div></div>` : '';
         return `<article class="card post">
       <header><span class="av">${esc(s.name[0])}</span><div><h3>${esc(s.name)}</h3><small>${esc(s.kind)}${s.isOpen ? '' : ', closed now'} · ${Math.max(1, Math.round(d / 60))} min walk (${d} m)</small></div>${s.isNew ? '<span class="tag solid">New</span>' : ''}</header>
       <button class="pic" data-act="view" data-id="${s.id}" aria-label="Open details of ${esc(s.name)}"><img src="${img}" alt="${real ? 'Photo' : 'Illustration'} of ${esc(s.name)}">${real ? '' : '<span class="cap">Illustration · open the spot to add a real photo</span>'}</button>
       <div class="stat"><span class="lv">${meter(s.noise, NOISE[s.noise] + ' noise')} ${NOISE[s.noise]}</span><span class="lv">${meter(s.crowd, CROWD[s.crowd] + ' crowd')} ${CROWD[s.crowd]} crowd</span>${extra(s)}<small>Updated ${ago(s.updatedAt)}</small></div>
-      <div class="rate"><span class="stars" role="group" aria-label="Rating">${stars}</span><b>${avg.toFixed(1)}</b><small>(${sc.count} ratings)${sc.mine ? ', you rated ' + sc.mine : ''}</small></div>
-      <div class="acts"><button class="btn sm" data-act="cm-toggle" data-id="${s.id}">Comments (${sc.comments.length})</button><button class="btn sm" data-act="report" data-id="${s.id}">Report status</button><button class="btn sm" data-act="feed-photo" data-id="${s.id}">Add photo</button><button class="btn sm" data-act="share" data-id="${s.id}">Share</button><button class="btn sm" data-act="fav" data-id="${s.id}" aria-pressed="${fav}">${fav ? '★ Saved' : '☆ Save'}</button><button class="btn sm solid" data-act="view" data-id="${s.id}">Details</button></div>
+      <div class="rate"><span class="stars" role="group" aria-label="Rating">${stars}</span><b>${avg.toFixed(1)}</b><small>(${sc.count} ratings)${myRate(sc) ? ', you rated ' + myRate(sc) : ''}</small></div>
+      <div class="acts"><button class="btn sm" data-act="cm-toggle" data-id="${s.id}">Comments (${feedItems(s, sc).length})</button><button class="btn sm" data-act="report" data-id="${s.id}">Report status</button><button class="btn sm" data-act="feed-photo" data-id="${s.id}">Add photo</button><button class="btn sm" data-act="share" data-id="${s.id}">Share</button><button class="btn sm" data-act="fav" data-id="${s.id}" aria-pressed="${fav}">${fav ? '★ Saved' : '☆ Save'}</button><button class="btn sm solid" data-act="view" data-id="${s.id}">Details</button></div>
       ${cms}</article>`;
     }).join('');
 }
@@ -1389,14 +1448,14 @@ document.addEventListener('click', e => {
     const a = el.dataset.act, s = byId(+el.dataset.id);
     if (a === 'rate') {
         const sc = soc(s), n = +el.dataset.n;
-        if (sc.mine)
-            sc.sum -= sc.mine;
+        if (myRate(sc))
+            sc.sum -= myRate(sc);
         else {
             sc.count++;
             award(POINTS.rating, 'rating shared');
         }
         sc.sum += n;
-        sc.mine = n;
+        sc.rates[meKey()] = n;
         renderFeed();
     }
     if (a === 'cm-toggle') {
@@ -1410,10 +1469,10 @@ document.addEventListener('click', e => {
             toast('Write a comment first.');
             return;
         }
-        sc.comments.push({ user: user.userName, text: txt, ts: Date.now(), mine: true });
+        sc.comments.push({ user: user.userName, text: txt, ts: Date.now(), up: 1, down: 0, votes: { [meKey()]: 1 } });   // starts with your upvote
         sc.draft = '';
         sc.open = true;
-        renderFeed();
+        refreshAll();
         award(POINTS.comment, 'feedback shared');
     }
 });
@@ -1460,13 +1519,12 @@ document.addEventListener('click', e => {
     }
     if (a === 'cm-like' || a === 'cm-down') {
         const m = soc(s).comments[i];
-        if (m.mine) return;
         cmVote(m, a === 'cm-like' ? 1 : -1);
-        renderFeed();
+        refreshAll();
     }
     if (a === 'cm-del') {
         soc(s).comments.splice(i, 1);
-        renderFeed();
+        refreshAll();
         toast('Comment deleted');
     }
 });
@@ -1549,6 +1607,19 @@ function authDone(name, opts = {}) {   // opts.isNew is true right after sign up
     go(dest, opts.isNew ? `Welcome to QuietSpot, ${name}! Let's set up your profile.` : `Welcome, ${name}!`);
 }
 // The browser says we are logged in but the server has no such account: log out here too and ask for a fresh login.
+// After a username change: everything the account wrote or voted on follows the new name.
+function renameAuthor(from, to) {
+    const f = from.toLowerCase(), t = to.toLowerCase();
+    const move = o => { if (f !== t && o && o[f] !== undefined) { o[t] = o[f]; delete o[f]; } };
+    spots.forEach(s => {
+        s.reports.forEach(r => { if (String(r.user).toLowerCase() === f) r.user = to; move(r.votes); });
+        s.photos.forEach(p => { if (p.user && String(p.user).toLowerCase() === f) p.user = to; });
+    });
+    Object.values(social).forEach(e => {
+        (e.comments || []).forEach(m => { if (String(m.user).toLowerCase() === f) m.user = to; move(m.votes); });
+        move(e.rates);
+    });
+}
 function accountGone() {
     loggedIn = false;
     user = new User('Guest', 'Student');
@@ -1679,6 +1750,7 @@ on('profileForm', 'submit', async e => {
         const data = await res.json();
         if (!data.ok) { $('acErr').textContent = data.error; return; }
         migrateGame(user.userName, data.userName);
+        renameAuthor(user.userName, data.userName);
         user.userName = data.userName;
         user.userType = data.userType.charAt(0) + data.userType.slice(1).toLowerCase();
         if (typeof PF !== 'undefined' && PF) { PF.userName = user.userName; pfRender(); }   // profile header shows the new @username
@@ -1807,6 +1879,7 @@ function seedSampleReports() {
 const STORE = 'qs-data-v4';
 const Social = {};
 function save() {
+    if (!spots.length) return;   // the spots are not loaded yet (page left too early): saving now would erase the saved reports and photos
     const data = {
         loggedIn, pos: state.pos, rid, pid, social,
         user: {
@@ -1842,6 +1915,8 @@ function loadState() {
         pid = Math.max(pid, d.pid || 1);
         Object.assign(social, d.social || {});
         const u = d.user || {};
+        LEGACY_OWNER = String(u.userName || '').toLowerCase();
+        Object.values(social).forEach(socUpgrade);   // old shared votes go to the account that was saved with them, before anyone else logs in
         user = new User(u.userName || 'Guest', u.userType || 'Student');
         Object.assign(user, { points: u.points ?? 20, reportsMade: u.reportsMade || 0, spotsAdded: u.spotsAdded || 0, photosAdded: u.photosAdded || 0 });
         user.favoriteSpots = new Set(u.fav || []);
