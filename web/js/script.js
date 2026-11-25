@@ -59,6 +59,7 @@ class StudySpot {
         this.reports = [];
         this.photos = [];
         this.isNew = !!o.isNew;
+        this.owner = o.owner || '';   // username of the student who added it ('' for the built-in spots)
     }
     get kind() { return 'Study spot'; }
     get isOpen() { const h = new Date().getHours(); return h >= this.hours[0] && h < this.hours[1]; }
@@ -207,6 +208,8 @@ async function loadSpotsFromJava() {
                 crowd: o.crowd,
                 description: o.description || '',
                 rules: o.rules || '',
+                owner: o.owner || '',
+                isNew: !!o.owner,   // spots added by students show "New, unverified"
                 fac: {
                     wifi: !!fac.wifi,
                     mbps: fac.mbps || 0,
@@ -303,12 +306,12 @@ function renderChip() {
     c.style.setProperty('--p', L.pct + '%');
     c.setAttribute('role', 'button');
     c.tabIndex = 0;
-    c.title = L.next ? `${L.toNext} points to ${L.next.n}. Open your dashboard.` : 'Top level reached. Open your dashboard.';
-    c.setAttribute('aria-label', `${user.userName}, level ${L.idx + 1} ${L.cur.n}, ${g.streak} day streak, ${user.points} points. Open dashboard.`);
+    c.title = L.next ? `${L.toNext} points to ${L.next.n}. Open your account.` : 'Top level reached. Open your account.';
+    c.setAttribute('aria-label', `${user.userName}, level ${L.idx + 1} ${L.cur.n}, ${g.streak} day streak, ${user.points} points. Open account.`);
     c.innerHTML = `<span class="who">${esc(user.userName)}</span><span class="lvl">Lv ${L.idx + 1}</span><span class="sk ${done ? '' : 'idle'}">${icon('flame')}${g.streak}</span><span>${user.points} pts</span>`;
     if (!c.dataset.bound) {
         c.dataset.bound = '1';
-        const open = () => { if (CURRENT !== 'dash') go('dash'); };
+        const open = () => { if (CURRENT !== 'account') go('account'); };
         c.addEventListener('click', open);
         c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
     }
@@ -777,11 +780,34 @@ function renderRewards() {
     <h3 class="sec">Badge shelf (${earnedN} of ${user.badges().length})</h3>
     <div class="shelf">${shelf}</div>`;
 }
+// Dashboard panel: the spots this account added, with View and Delete.
+function renderMySpots() {
+    const box = $('dMySpots');
+    const mine = loggedIn ? spots.filter(s => s.owner && s.owner.toLowerCase() === user.userName.toLowerCase()) : [];
+    const rows = mine.map(s => `<tr>
+      <td><strong>${esc(s.name)}</strong><div class="meta">${esc(s.address || '')}</div></td>
+      <td>${esc(s.kind)}</td>
+      <td>${NOISE[s.noise]} noise, ${CROWD[s.crowd]} crowd</td>
+      <td>${esc(s.priceLabel())}</td>
+      <td><div class="acts">
+        <button class="btn sm" data-act="view" data-id="${s.id}">View</button>
+        <button class="btn sm danger" data-act="del-spot" data-id="${s.id}" aria-label="Delete ${esc(s.name)}">Delete</button>
+      </div></td></tr>`).join('');
+    box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <h3 class="sec" style="margin:0">My spots (${mine.length})</h3>
+      <button class="btn sm solid" data-act="go-add">+ Add a spot</button>
+    </div>
+    <p class="meta" style="margin:6px 0 12px">Spots you added. You can remove them here. They are deleted too if you delete your account.</p>
+    ${mine.length ? `<div class="tablewrap"><table><thead><tr><th>Spot</th><th>Type</th><th>Conditions</th><th>Price</th><th>Manage</th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : `<p class="empty">You have not added any spots yet.</p>`}`;
+}
 function renderDash() {
     if ($('stats')) renderStats();
     if ($('dProfile')) renderProfilePanel();
     if ($('dVerify')) renderPicks();
     if ($('dRewards')) renderRewards();
+    if ($('dMySpots')) renderMySpots();
     if ($('acDetails')) renderAccountDetails();
 }
 
@@ -1077,7 +1103,8 @@ on('addForm', 'submit', async e => {
                 mbps,
                 noise, crowd,
                 outlets, aircon, food,
-                description, rules
+                description, rules,
+                username: user.userName
             })
         });
 
@@ -1095,6 +1122,7 @@ on('addForm', 'submit', async e => {
             noise, crowd,
             rules, description,
             isNew: true,
+            owner: user.userName,
             fac: {
                 wifi: mbps > 0,
                 mbps,
@@ -1197,6 +1225,10 @@ document.addEventListener('click', e => {
         go('spots');
     }
 }
+    if (act === 'del-spot') {
+        deleteSpot(id);
+        return;
+    }
     if (act === 'view')
         openSpot(id);
     if (act === 'report')
@@ -1483,6 +1515,27 @@ function requireLogin(message, backTo) {
     document.querySelectorAll('dialog[open]').forEach(d => d.close());
     go('login', message);
     return false;
+}
+// Only for spots a student added: the student who added it, or a faculty/staff account, may delete it.
+function canDeleteSpot(s) {
+    if (!loggedIn || !s || !s.owner) return false;
+    return s.owner.toLowerCase() === user.userName.toLowerCase() || ['Faculty', 'Staff'].includes(user.userType);
+}
+async function deleteSpot(id) {
+    const s = byId(id);
+    if (!s || !canDeleteSpot(s)) return;
+    if (!confirm(`Delete "${s.name}"? It will be removed for everyone, along with its photos and reports.`)) return;
+    try {
+        const res = await fetch('/api/delete-spot', { method: 'POST', body: new URLSearchParams({ username: user.userName, spotId: id }) });
+        const data = await res.json();
+        if (!data.ok) { toast(data.error || 'Could not delete this spot.'); return; }
+    } catch (e) { toast('Cannot reach the server. Make sure Main.java is running.'); return; }
+    spots = spots.filter(x => x.id !== id);
+    user.favoriteSpots.delete(id);
+    if (state.sel === id) state.sel = null;
+    ['dlgSpot', 'dlgReport'].forEach(d => { if ($(d) && $(d).open) $(d).close(); });
+    refreshAll();
+    toast('Spot deleted.');
 }
 function authDone(name, opts = {}) {   // opts.isNew is true right after sign up
     user = new User(name, 'Student');
@@ -1793,12 +1846,10 @@ function loadState() {
         Object.assign(user, { points: u.points ?? 20, reportsMade: u.reportsMade || 0, spotsAdded: u.spotsAdded || 0, photosAdded: u.photosAdded || 0 });
         user.favoriteSpots = new Set(u.fav || []);
         (d.spots || []).forEach(o => {
-            let s = byId(o.id);
-            if (!s) {
-                if (!(o.y > 4 && o.y < 22 && o.x > 116 && o.x < 127)) return;
-                s = new (TYPES[o.type] || StudySpot)({ ...o, fac: o.fac });
-                spots.push(s);
-            }
+            const s = byId(o.id);
+            // The server is the list of truth: a spot it no longer has (deleted, or lost in an old restart) stays gone,
+            // and a saved entry is only used if the name still matches (ids can be reused).
+            if (!s || s.name !== o.name) return;
             Object.assign(s, { noise: o.noise, crowd: o.crowd, updatedAt: o.updatedAt, busy: o.busy || s.busy });
             s.reports = (o.reports || []).map(r => new Report(r));
             if (o.photos && o.photos.length) s.photos = o.photos.map(p => new Photo(p));

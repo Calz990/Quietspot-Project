@@ -73,7 +73,8 @@ public class AuthService {
 
     public UserAccount login(String userName, String password) throws InvalidInputException {
         UserAccount user = userName == null ? null : users.get(userName.trim().toLowerCase());
-        if (user == null || password == null || !user.checkPassword(password)) {
+        // The username must be typed exactly as it was created ("Calz" is not "calz").
+        if (user == null || !user.getUserName().equals(userName.trim()) || password == null || !user.checkPassword(password)) {
             throw new InvalidInputException("Incorrect username or password.");
         }
         return user;

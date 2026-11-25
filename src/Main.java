@@ -21,6 +21,7 @@ public class Main {
     public static void main(String[] args) throws Exception {
         // 1. I-load ang default spots at sample account sa Java backend
         repo.loadDefaultSpots();
+        repo.loadUserSpots();   // spots students added earlier (data/spots.tsv)
         // The demo account is created only the first time; after that it is loaded from data/users.tsv with everything else.
         try {
             if (!auth.exists("Charisse")) {
@@ -159,6 +160,8 @@ public class Main {
                     u.setUserType(UserType.valueOf(d.get("userType").toUpperCase()));
                 } catch (Exception ignored) {
                 }
+                auth.save();
+                repo.renameOwner(oldName.trim(), u.getUserName());   // their spots keep belonging to them
                 activeUsers.remove(oldName.trim().toLowerCase());
                 activeUsers.put(u.getUserName().toLowerCase(), u);
                 sendJson(exchange, 200, String.format("{\"ok\":true,\"userName\":\"%s\",\"userType\":\"%s\"}",
@@ -188,6 +191,7 @@ public class Main {
             Map<String, String> d = parseForm(readBody(exchange));
             try {
                 auth.deleteAccount(d.get("username"), d.get("password"));
+                repo.removeByOwner(d.get("username").trim());   // their spots go with the account
                 activeUsers.remove(d.get("username").trim().toLowerCase());
                 sendJson(exchange, 200, "{\"ok\":true}");
             } catch (InvalidInputException e) {
@@ -205,13 +209,13 @@ public class Main {
                 Facility f = s.getFacility();
                 sb.append(String.format(java.util.Locale.ROOT,
                         "{\"id\":%d,\"type\":\"%s\",\"name\":\"%s\",\"address\":\"%s\",\"x\":%.6f,\"y\":%.6f," +
-                        "\"hours\":[%d,%d],\"price\":%.0f,\"noise\":%d,\"crowd\":%d,\"description\":\"%s\",\"rules\":\"%s\"," +
+                        "\"hours\":[%d,%d],\"price\":%.0f,\"noise\":%d,\"crowd\":%d,\"description\":\"%s\",\"rules\":\"%s\",\"owner\":\"%s\"," +
                         "\"fac\":{\"wifi\":%b,\"mbps\":%d,\"outlets\":%b,\"aircon\":%b,\"food\":%b}}",
                         s.getId(), s.getClass().getSimpleName(), esc(s.getName()), esc(s.getAddress()), s.getX(),
                         s.getY(),
                         s.getHours()[0], s.getHours()[1], s.getPrice(),
                         s.getNoise().ordinal() + 1, s.getCrowd().ordinal() + 1,
-                        esc(s.getDescription()), esc(s.getRules()),
+                        esc(s.getDescription()), esc(s.getRules()), esc(s.getCreatedBy()),
                         f.isWifi(), f.getMbps(), f.isOutlets(), f.isAircon(), f.isFood()));
                 if (i < list.size() - 1)
                     sb.append(",");
@@ -250,6 +254,8 @@ public class Main {
                 return;
             Map<String, String> data = parseForm(readBody(exchange));
             try {
+                UserAccount owner = auth.lookup(data.get("username"));
+                if (owner == null) throw new InvalidInputException("Please log in to add a spot.");
                 String type = data.get("type");
                 String name = data.get("name");
                 String addr = data.getOrDefault("address", "Location pinned on the map");
@@ -284,9 +290,45 @@ public class Main {
                     default -> new Cafe(id, name, addr, x, y, hours, price, noise, crowd, fac, desc, rules);
                 };
 
+                newSpot.setCreatedBy(owner.getUserName());   // remembered so only the owner (or faculty/staff) can delete it
                 repo.addSpot(newSpot);
+                repo.saveUserSpots();
+                owner.incrementSpotsAdded();
+                auth.save();
                 sendJson(exchange, 200, "{\"ok\":true,\"id\":" + id + ",\"kind\":\"" + esc(newSpot.getKind()) + "\"}");
             } catch (Exception e) {
+                sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
+            }
+        });
+
+        // API: DELETE A SPOT. Allowed for the student who added it, or a faculty/staff account. Built-in spots stay.
+        server.createContext("/api/delete-spot", exchange -> {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"ok\":false,\"error\":\"Method not allowed.\"}");
+                return;
+            }
+            Map<String, String> d = parseForm(readBody(exchange));
+            try {
+                UserAccount u = auth.lookup(d.get("username"));
+                if (u == null) throw new InvalidInputException("Please log in to delete a spot.");
+                int id;
+                try {
+                    id = Integer.parseInt(String.valueOf(d.get("spotId")).trim());
+                } catch (NumberFormatException e) {
+                    throw new InvalidInputException("That is not a valid spot.");
+                }
+                SpotArea spot = repo.findById(id);
+                if (spot == null) throw new InvalidInputException("That spot no longer exists.");
+                if (spot.getCreatedBy().isEmpty())
+                    throw new InvalidInputException("Built-in spots cannot be deleted.");
+                boolean isOwner = spot.getCreatedBy().equalsIgnoreCase(u.getUserName());
+                boolean isModerator = u.getUserType() == UserType.FACULTY || u.getUserType() == UserType.STAFF;
+                if (!isOwner && !isModerator)
+                    throw new InvalidInputException("Only the student who added this spot, or a faculty/staff account, can delete it.");
+                repo.removeById(id);
+                repo.saveUserSpots();
+                sendJson(exchange, 200, "{\"ok\":true}");
+            } catch (InvalidInputException e) {
                 sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
             }
         });

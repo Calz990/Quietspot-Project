@@ -1,12 +1,14 @@
 package service;
 
 import model.*;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
 public class SpotRepository {
     private final List<SpotArea> spots = new ArrayList<>();
     private int nextId = 1;
+    private final SpotStore store = new SpotStore(Paths.get("data", "spots.tsv"));
 
     public int nextId() {
         return nextId++;
@@ -16,6 +18,40 @@ public class SpotRepository {
         if (spot == null) 
             throw new IllegalArgumentException("Spot cannot be null");
         spots.add(spot);
+        if (spot.getId() >= nextId) nextId = spot.getId() + 1;   // never hand out an id that is already used
+    }
+
+    // Brings back the spots students added before the server was last stopped (call after loadDefaultSpots).
+    public void loadUserSpots() {
+        for (SpotArea s : store.load()) addSpot(s);
+    }
+
+    // Writes the student-added spots to data/spots.tsv. Call after adding or deleting one.
+    public void saveUserSpots() {
+        store.save(spots);
+    }
+
+    // Returns true if a spot with this id existed and was removed.
+    public boolean removeById(int id) {
+        return spots.removeIf(s -> s.getId() == id);
+    }
+
+    // Removes every spot added by this user (used when their account is deleted). Returns how many were removed.
+    public int removeByOwner(String owner) {
+        int before = spots.size();
+        spots.removeIf(s -> !s.getCreatedBy().isEmpty() && s.getCreatedBy().equalsIgnoreCase(owner));
+        int removed = before - spots.size();
+        if (removed > 0) saveUserSpots();
+        return removed;
+    }
+
+    // When a student changes their username, the spots they added follow the new name.
+    public void renameOwner(String oldName, String newName) {
+        boolean changed = false;
+        for (SpotArea s : spots) {
+            if (s.getCreatedBy().equalsIgnoreCase(oldName)) { s.setCreatedBy(newName); changed = true; }
+        }
+        if (changed) saveUserSpots();
     }
 
     public List<SpotArea> getAll() {
