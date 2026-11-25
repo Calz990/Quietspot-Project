@@ -39,6 +39,24 @@ public class UserAccount {
         this.profile = new UserProfile(userName);   // full name starts as the username until the person sets one
     }
 
+    // Rebuilds an account that was saved to disk (see service.UserStore). The password hash is kept exactly as saved.
+    public static UserAccount restore(String userName, UserType userType, String passwordHash, int points,
+                                      int reportsMade, int spotsAdded, int photosAdded, String email,
+                                      String createdAt, Set<Integer> favorites) {
+        UserAccount u = new UserAccount(userName, "unused", userType);
+        u.passwordHash = passwordHash;
+        u.points = points;
+        u.reportsMade = reportsMade;
+        u.spotsAdded = spotsAdded;
+        u.photosAdded = photosAdded;
+        u.email = email;
+        if (createdAt != null && !createdAt.isBlank()) u.createdAt = createdAt;
+        u.favoriteSpots = new HashSet<>(favorites);
+        return u;
+    }
+
+    public String getPasswordHash() { return passwordHash; }
+
     public boolean checkPassword(String password) {
         return this.passwordHash.equals(hash(password));
     }

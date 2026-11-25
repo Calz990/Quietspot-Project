@@ -1,5 +1,6 @@
 package service;
 
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import model.UserAccount;
@@ -8,6 +9,31 @@ import exception.InvalidInputException;
 
 public class AuthService {
     private final Map<String, UserAccount> users = new HashMap<>();
+    private final UserStore store;
+
+    // Accounts are saved in data/users.tsv, so they are still there after the server restarts.
+    public AuthService() {
+        this(new UserStore(Paths.get("data", "users.tsv")));
+    }
+
+    public AuthService(UserStore store) {
+        this.store = store;
+        for (UserAccount u : store.load()) users.put(u.getUserName().toLowerCase(), u);
+    }
+
+    // Call after anything about an account changes (points, counts, profile...).
+    public synchronized void save() {
+        store.save(users.values());
+    }
+
+    public synchronized boolean exists(String userName) {
+        return userName != null && users.containsKey(userName.trim().toLowerCase());
+    }
+
+    // The real account for this name, or null if there is none.
+    public synchronized UserAccount lookup(String userName) {
+        return userName == null ? null : users.get(userName.trim().toLowerCase());
+    }
 
     public UserAccount register(String userName, String password, UserType userType) throws InvalidInputException {
         return register(userName, password, userType, null);
@@ -41,6 +67,7 @@ public class AuthService {
             user.getProfile().update(Map.of("fullName", fullName));
         }
         users.put(key, user);
+        save();
         return user;
     }
 
@@ -69,6 +96,7 @@ public class AuthService {
         users.remove(oldKey);
         user.setUserName(newName.trim());
         users.put(newKey, user);
+        save();
         return user;
     }
 
@@ -79,6 +107,7 @@ public class AuthService {
         if (newPw == null || newPw.length() < 6)
             throw new InvalidInputException("Password must be at least 6 characters.");
         user.setPassword(newPw);
+        save();
     }
 
     public void deleteAccount(String userName, String password) throws InvalidInputException {
@@ -86,6 +115,7 @@ public class AuthService {
         if (password == null || !user.checkPassword(password))
             throw new InvalidInputException("Incorrect password.");
         users.remove(user.getUserName().toLowerCase());
+        save();
     }
 
     public UserAccount getUser(String userName) throws InvalidInputException {
@@ -108,6 +138,7 @@ public class AuthService {
         user.getProfile().update(data);        // throws if anything is invalid, nothing is saved then
         if (newType != null) user.setUserType(newType);
         if ("true".equalsIgnoreCase(data.get("setupDone"))) user.getProfile().markSetupDone();
+        save();
         return user;
     }
 
@@ -126,5 +157,6 @@ public class AuthService {
             throw new InvalidInputException("Password must be at least 6 characters.");
         }
         user.setPassword(newPw);
+        save();
     }
 }

@@ -410,6 +410,10 @@ async function initProfilePage() {
     if (!loggedIn) return;
     const host = CURRENT === 'setup' ? 'suBody' : 'pfHead';
     const err = await pfLoad();
+    if (err === 'Account not found.') {   // the server does not know this account (for example it was restarted and lost it)
+        accountGone();
+        return;
+    }
     if (err) {
         if (CURRENT === 'setup') { $('suFoot').innerHTML = ''; $('suPreview').hidden = true; }
         pfFail(err, host);

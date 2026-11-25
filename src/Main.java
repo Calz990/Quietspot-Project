@@ -21,10 +21,13 @@ public class Main {
     public static void main(String[] args) throws Exception {
         // 1. I-load ang default spots at sample account sa Java backend
         repo.loadDefaultSpots();
+        // The demo account is created only the first time; after that it is loaded from data/users.tsv with everything else.
         try {
-            UserAccount demo = auth.register("Charisse", "secret123", UserType.STUDENT);
-            demo.setEmail("charisse@example.com");
-            activeUsers.put("charisse", demo);
+            if (!auth.exists("Charisse")) {
+                UserAccount demo = auth.register("Charisse", "secret123", UserType.STUDENT);
+                demo.setEmail("charisse@example.com");
+                auth.save();
+            }
         } catch (InvalidInputException ignored) {
         }
 
@@ -224,14 +227,17 @@ public class Main {
             Map<String, String> data = parseForm(readBody(exchange));
             try {
                 String uname = data.getOrDefault("username", "guest").toLowerCase();
-                UserAccount u = activeUsers.computeIfAbsent(uname,
-                        k -> new UserAccount(data.getOrDefault("username", "Guest"), "default123"));
+                UserAccount u = auth.lookup(uname);   // a real account when there is one (its points and report count are saved)
+                if (u == null)
+                    u = activeUsers.computeIfAbsent(uname,
+                            k -> new UserAccount(data.getOrDefault("username", "Guest"), "default123"));
                 int spotId = Integer.parseInt(data.get("spotId"));
                 NoiseLevel noise = NoiseLevel.values()[Integer.parseInt(data.get("noise")) - 1];
                 CrowdLevel crowd = CrowdLevel.values()[Integer.parseInt(data.get("crowd")) - 1];
                 String note = data.getOrDefault("note", "");
 
                 reports.submitReport(u, spotId, noise, crowd, note);
+                auth.save();
                 sendJson(exchange, 200, "{\"ok\":true,\"points\":" + u.getPoints() + "}");
             } catch (Exception e) {
                 sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");

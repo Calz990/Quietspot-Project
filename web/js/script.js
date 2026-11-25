@@ -1495,6 +1495,20 @@ function authDone(name, opts = {}) {   // opts.isNew is true right after sign up
     nextPage = 'home';
     go(dest, opts.isNew ? `Welcome to QuietSpot, ${name}! Let's set up your profile.` : `Welcome, ${name}!`);
 }
+// The browser says we are logged in but the server has no such account: log out here too and ask for a fresh login.
+function accountGone() {
+    loggedIn = false;
+    user = new User('Guest', 'Student');
+    go('login', 'The server no longer has this account. Please log in again or sign up.');
+}
+async function verifyAccount() {
+    try {
+        const res = await fetch('/api/account/details', { method: 'POST', body: new URLSearchParams({ username: user.userName }) });
+        const data = await res.json();
+        if (!data.ok && data.error === 'Account not found.') return false;
+    } catch (e) { /* server not reachable: keep what the browser has */ }
+    return true;
+}
 document.addEventListener('click', e => {
     if (!e.target.closest('[data-act="logout"]')) return;
     loggedIn = false;
@@ -1800,9 +1814,13 @@ window.addEventListener('pagehide', save);
 //=====================================================
 
 loadState();
-loadSpotsFromJava().then(ok => {
+loadSpotsFromJava().then(async ok => {
     if (!ok) return;
     loadState();
+    if (loggedIn && !(await verifyAccount())) {
+        if (PUBLIC_PAGES.includes(CURRENT)) { loggedIn = false; user = new User('Guest', 'Student'); save(); }
+        else { accountGone(); return; }
+    }
     seedSampleReports();
     document.querySelectorAll('nav.main .pill').forEach(b =>
         b.setAttribute('aria-current', b.dataset.page === CURRENT ? 'page' : 'false')
