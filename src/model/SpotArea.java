@@ -19,6 +19,7 @@ public abstract class SpotArea {
     private Facility facility;
     private long updatedAt;
     private boolean isNew;
+    private String createdBy = "";   // username of the student who added it; empty for the built-in spots
     private List<ReportStatus> reports;
 
     public SpotArea(int id, String name, String address, double x, double y, int[] hours, 
@@ -74,6 +75,9 @@ public abstract class SpotArea {
     }
 
     // Getters & Setters
+    public String getCreatedBy() { return createdBy; }
+    public void setCreatedBy(String createdBy) { this.createdBy = createdBy == null ? "" : createdBy; }
+
     public int getId() {
         return id;
     }

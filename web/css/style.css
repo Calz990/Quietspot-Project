@@ -2686,23 +2686,33 @@ ol.wk {
   height: 14px;
 }
 
-/* feed comments: upvote / downvote */
+/* feed comments: Reddit-style single score  ▲ 4 ▼ */
 .cvote {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   margin-right: 10px;
+  padding: 1px 4px;
+  border: 1px solid var(--line, rgba(0,0,0,.2));
+  border-radius: 999px;
+  background: var(--surface);
 }
 
 .cvote .lk {
   margin-right: 0;
   padding: 2px 6px;
-  border-radius: 6px;
+  border-radius: 999px;
+  line-height: 1;
 }
 
-.cvote .lk[aria-pressed="true"] {
-  background: var(--brand,var(--ink));
-  color: var(--on-brand,var(--on-ink));
+.cvote .lk.up[aria-pressed="true"] {
+  background: #e8590c;
+  color: #fff;
+}
+
+.cvote .lk.down[aria-pressed="true"] {
+  background: #5c6bc0;
+  color: #fff;
 }
 
 .cvote .lk:disabled {
@@ -2711,11 +2721,14 @@ ol.wk {
 }
 
 .cscore {
-  min-width: 18px;
+  min-width: 22px;
   text-align: center;
   font-weight: 700;
   font-size: .85rem;
 }
+
+.cscore.pos { color: #e8590c; }
+.cscore.neg { color: #5c6bc0; }
 
 .cm.low .bub p {
   opacity: .5;
@@ -2726,3 +2739,59 @@ ol.wk {
   font-size: .78rem;
   font-style: italic;
 }
+/* =====================================================
+   map.css: Leaflet map on the Spots page.
+   ===================================================== */
+.mapcard #map {
+  height: 420px;
+  position: relative;
+  z-index: 0;
+  border-radius: 10px;
+  border: 1.5px solid var(--line);
+  background: var(--surface2);
+  cursor: crosshair;
+}
+.lpin-wrap { background: none; border: 0; }
+.lpin {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand,var(--ink));
+  border: 3px solid var(--surface);
+  box-shadow: 0 1px 4px rgba(0,0,0,.5);
+  cursor: pointer;
+}
+.lpin.sel { outline: 3px solid var(--ink); outline-offset: 2px; }
+.lpin.dim { opacity: .3; }
+.lme {
+  display: block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  font: 700 .72rem var(--body);
+  text-align: center;
+  cursor: grab;
+}
+.leaflet-container { font-family: var(--body); }
+.mapcard .leaflet-control-attribution svg { width: 12px; height: 8px; display: inline; border: 0; border-radius: 0; background: none; cursor: auto; }
+:root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9); }
+
+/* ===== Account page: details, forgot password link, danger zone ===== */
+:root { --danger: #CF222E; --danger-bg: rgba(207,34,46,.08); }
+:root[data-theme="dark"] { --danger: #FF6B6B; --danger-bg: rgba(255,107,107,.12); }
+.acard { padding: 24px; margin-bottom: 18px; }
+dl.det.acdet { grid-template-columns: 160px 1fr; margin: 12px 0 0; }
+.dlg.stack { display: flex; flex-direction: column; gap: 12px; }
+.linkbtn { background: none; border: 0; padding: 0; align-self: flex-start; font: inherit; font-size: .9rem; font-weight: 700; color: var(--muted); text-decoration: underline; cursor: pointer; }
+.linkbtn:hover { color: var(--ink); }
+.danger-zone { margin-top: 18px; border: 1px solid var(--danger); border-radius: 14px; overflow: hidden; background: var(--surface); }
+.danger-zone h3 { margin: 0; padding: 14px 20px; color: var(--danger); border-bottom: 1px solid var(--danger); }
+.dz-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 20px; }
+.dz-row p { margin: 2px 0 0; }
+.btn.danger { background: var(--surface); color: var(--danger); border: 2px solid var(--danger); }
+.btn.danger:hover:not(:disabled) { background: var(--danger); color: #fff; }
+.btn.danger:disabled { opacity: .5; cursor: not-allowed; }
+.dz-warn { background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 10px; padding: 12px 14px; font-size: .92rem; }

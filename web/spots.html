@@ -15,6 +15,7 @@
     document.documentElement.setAttribute('data-theme', t);
   })();
   </script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body data-page="spots">
@@ -29,6 +30,7 @@
       <button class="pill" data-act="go" data-page="reco">Reco</button>
       <button class="pill" data-act="go" data-page="spots" aria-current="page">Spots</button>
       <button class="pill" data-act="go" data-page="dash">Dashboard</button>
+      <button class="pill" data-act="go" data-page="account">Account</button>
     </nav>
     <span class="chip" id="whoChip"></span>
     <button class="btn sm" id="authBtn" data-act="go" data-page="login">Login</button>
@@ -82,8 +84,9 @@
       </div>
       <aside class="card mapcard">
         <h3>Map of nearby spots</h3>
-        <svg id="map" viewBox="0 0 100 70" role="group" aria-label="Schematic map of study spots"></svg>
-        <p class="legend">Faded pins are hidden by your filters. Tap the map to move your location.</p>
+        <div id="map" role="application" aria-label="Map of study spots"></div>
+        <button type="button" class="btn sm" id="locBtn" style="margin-top:10px">Use my current location</button>
+        <p class="legend">Faded pins are hidden by your filters. Click the map or drag <b>You</b> to move your location.</p>
       </aside>
     </div>
   </div>
@@ -139,6 +142,7 @@
 <!-- ===== TOAST (small message popup) ===== -->
 <div id="toast" role="status" aria-live="polite"></div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="js/script.js"></script>
 </body>
 </html>

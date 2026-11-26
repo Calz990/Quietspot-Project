@@ -1,6 +1,7 @@
 // QuietSpot: script.js 
 // Sections: helpers, model, data, ui, spot-list, dashboard, spot-detail, events,
 // palette, feed, feed-extras, reco, auth, main
+// (profile and profile-setup pages: see profile.js)
 
 // =====================================================
 // helpers.js: Small helper functions used everywhere
@@ -26,6 +27,9 @@ const ago = ts => {
 };
 const busyCurve = (peak, w, base = 8) => Array.from({ length: 13 }, (_, i) => Math.min(100, Math.round(base + 85 * Math.exp(-((8 + i - peak) ** 2) / (2 * w * w)))));
 const walk = m => Math.max(1, Math.ceil(m / 80)) + ' min';
+// Directions links (free, no API key): Google Maps uses the person's own location as the start
+const gmapsDir = s => `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}&travelmode=walking`;
+const wazeDir = s => `https://waze.com/ul?ll=${s.lat},${s.lng}&navigate=yes`;
 
 // =====================================================
 // model.js: OOP model: Spot classes 
@@ -55,6 +59,7 @@ class StudySpot {
         this.reports = [];
         this.photos = [];
         this.isNew = !!o.isNew;
+        this.owner = o.owner || '';   // username of the student who added it ('' for the built-in spots)
     }
     get kind() { return 'Study spot'; }
     get isOpen() { const h = new Date().getHours(); return h >= this.hours[0] && h < this.hours[1]; }
@@ -66,7 +71,16 @@ class StudySpot {
         this.photos.unshift(p);
     }
     removePhoto(id) { this.photos = this.photos.filter(p => p.id !== id); }
-    distance(p) { return Math.round(Math.hypot(this.x - p.x, this.y - p.y) * 18); }
+    // Map coordinates: the server stores longitude in x and latitude in y.
+    get lng() { return this.x; }
+    get lat() { return this.y; }
+    // Straight-line distance in meters between this spot and p = { lat, lng } (haversine formula)
+    distance(p) {
+        const R = 6371000, rad = d => d * Math.PI / 180;
+        const dLat = rad(p.lat - this.lat), dLng = rad(p.lng - this.lng);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(this.lat)) * Math.cos(rad(p.lat)) * Math.sin(dLng / 2) ** 2;
+        return Math.round(2 * R * Math.asin(Math.sqrt(a)));
+    }
     updateStatus({ noise, crowd }) { this.noise = noise; this.crowd = crowd; this.updatedAt = Date.now(); }
     syncFrom(r) { this.noise = r.noise; this.crowd = r.crowd; this.updatedAt = r.ts; }
     displayInfo() { return `${this.name} (${this.kind}): ${NOISE[this.noise]} noise, ${CROWD[this.crowd]} crowd. ${this.extraInfo()}`.trim(); }
@@ -101,14 +115,31 @@ class CoworkingSpace extends StudySpot {
     extraInfo() { return 'Day and hourly passes may be offered.'; }
 }
 const TYPES = { Cafe, Library, StudyRoom, CoworkingSpace };
+// Who is using the page right now. Ownership and votes are kept PER USERNAME (never as a flag on the item),
+// so a different account on the same browser never inherits another account's votes, ratings or "(you)" labels.
+const meKey = () => (loggedIn ? String(user.userName).toLowerCase() : '');
+const isMe = name => !!name && loggedIn && String(name).toLowerCase() === meKey();
+let LEGACY_OWNER = '';   // username that was saved with data from before votes were kept per account
 class Photo {
-    constructor(o) { Object.assign(this, { caption: '', mine: false }, o); }
+    constructor(o) {
+        const { mine, ...rest } = o;   // old saved photos carry a mine flag: ownership is now worked out from the username
+        Object.assign(this, { caption: '', user: 'QuietSpot' }, rest);
+    }
+    get mine() { return isMe(this.user); }
 }
 class Report {
-    constructor(o) { Object.assign(this, { note: '', up: 0, down: 0, mine: false, myVote: 0 }, o); }
+    constructor(o) {
+        const { mine, myVote, votes, ...rest } = o;
+        Object.assign(this, { note: '', up: 0, down: 0 }, rest);
+        // votes: { username: 1 or -1 }. A vote saved by the old version belongs to the account that was saved with it.
+        this.votes = votes || (myVote && LEGACY_OWNER ? { [LEGACY_OWNER]: myVote } : {});
+    }
+    get mine() { return isMe(this.user); }
+    get myVote() { return this.votes[meKey()] || 0; }
     net() { return this.up - this.down; }
 }
 class User {
+    unlocked = new Set();   // ids of badges this student has earned; a badge is never taken back (saved per username, see gameSync)
     constructor(name, type) { this.userName = name; this.userType = type; this.points = 20; this.favoriteSpots = new Set(); this.reportsMade = 0; this.spotsAdded = 0; this.photosAdded = 0; this.streak = 0; this.bestStreak = 0; }
     toggleFavorite(id) { if (this.favoriteSpots.has(id)) {
         this.favoriteSpots.delete(id);
@@ -116,7 +147,11 @@ class User {
     } this.favoriteSpots.add(id); return true; }
     badges() {
         // have/need drive the progress bar on locked badges in the shelf
-        const b = (id, name, desc, icon, have, need) => ({ id, name, desc, icon, have: Math.min(have, need), need, earned: have >= need });
+        // earned stays true once it was reached, even if the number later drops (for example after un-favoriting a spot)
+        const b = (id, name, desc, icon, have, need) => {
+            const earned = have >= need || this.unlocked.has(id);
+            return { id, name, desc, icon, have: earned ? need : Math.min(have, need), need, earned };
+        };
         return [
             b('first', 'First report', 'Send your first update', 'chat', this.reportsMade, 1),
             b('scout', 'Spot scout', 'Add a new study spot', 'pin', this.spotsAdded, 1),
@@ -148,9 +183,9 @@ const PUBLIC_PAGES = [
 ];
 const state = {
     pos: {
-         x: 40, 
-         y: 35 
-        },
+        lat: 13.7847,
+        lng: 121.0735
+    },
     sel: null,
     dashSpot: null,
     ver: { spot: 'all', show: 'all' },   // Community verification filters on the dashboard
@@ -189,6 +224,8 @@ async function loadSpotsFromJava() {
                 crowd: o.crowd,
                 description: o.description || '',
                 rules: o.rules || '',
+                owner: o.owner || '',
+                isNew: !!o.owner,   // spots added by students show "New, unverified"
                 fac: {
                     wifi: !!fac.wifi,
                     mbps: fac.mbps || 0,
@@ -223,12 +260,13 @@ async function loadSpotsFromJava() {
         spots.forEach(s => {
             const src = photoMap[s.name];
             if (src) {
-                s.photos = [{
+                s.photos = [new Photo({
                     id: pid++,
                     src: src,
                     caption: s.name,
-                    mine: false
-                }];
+                    user: 'QuietSpot',
+                    ts: Date.now()
+                })];
             }
         });
 
@@ -260,6 +298,8 @@ function applyTheme(t) {
 $('themeBtn').addEventListener('click', () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
 applyTheme(document.documentElement.getAttribute('data-theme'));
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3000); }
+// Point values: the ONLY place they are defined. award() callers and the "How to earn points" list both read from here.
+const POINTS = { report: 5, spot: 25, photo: 5, rating: 2, comment: 3 };
 function award(n, why) {
     user.points += n;
     track(n);          // counts toward today's streak and this week's leaderboard
@@ -283,12 +323,12 @@ function renderChip() {
     c.style.setProperty('--p', L.pct + '%');
     c.setAttribute('role', 'button');
     c.tabIndex = 0;
-    c.title = L.next ? `${L.toNext} points to ${L.next.n}. Open your dashboard.` : 'Top level reached. Open your dashboard.';
-    c.setAttribute('aria-label', `${user.userName}, level ${L.idx + 1} ${L.cur.n}, ${g.streak} day streak, ${user.points} points. Open dashboard.`);
+    c.title = L.next ? `${L.toNext} points to ${L.next.n}. Open your account.` : 'Top level reached. Open your account.';
+    c.setAttribute('aria-label', `${user.userName}, level ${L.idx + 1} ${L.cur.n}, ${g.streak} day streak, ${user.points} points. Open account.`);
     c.innerHTML = `<span class="who">${esc(user.userName)}</span><span class="lvl">Lv ${L.idx + 1}</span><span class="sk ${done ? '' : 'idle'}">${icon('flame')}${g.streak}</span><span>${user.points} pts</span>`;
     if (!c.dataset.bound) {
         c.dataset.bound = '1';
-        const open = () => { if (CURRENT !== 'dash') go('dash'); };
+        const open = () => { if (CURRENT !== 'account') go('account'); };
         c.addEventListener('click', open);
         c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
     }
@@ -297,7 +337,8 @@ function renderChip() {
 // Which file each page name opens. Navigation now opens another HTML file.
 const PAGE_FILES = {
     home: 'index.html', feed: 'feed.html', reco: 'reco.html', spots: 'spots.html',
-    dash: 'dashboard.html', about: 'about.html', login: 'login.html', signup: 'signup.html'
+    dash: 'dashboard.html', account: 'account.html', about: 'about.html', login: 'login.html', signup: 'signup.html',
+    setup: 'setup-profile.html'
 };
 function go(page, msg) {
     if (!PUBLIC_PAGES.includes(page) && !loggedIn) {
@@ -377,21 +418,67 @@ function renderRows() {
       </div></td></tr>`;
     }).join('') : `<tr><td colspan="7" class="empty">No spots match these filters. <button class="btn sm" data-act="clear">Clear filters</button></td></tr>`;
 }
-function renderMap() {
-    if (!$('map')) return;
-    const match = new Set(filtered().map(s => s.id));
-    let g = `<rect x="6" y="8" width="38" height="26" rx="3" fill="none" stroke="var(--ink)" stroke-width=".5" stroke-dasharray="2 1.5"/><text x="9" y="14" font-size="2.8" fill="var(--muted)">Campus (sample)</text>`;
-    g += `<path d="M0 44 L100 40 M30 0 L34 70 M68 0 L72 70" stroke="var(--line)" stroke-width="2.4" fill="none"/>`;
-    spots.forEach(s => {
-        const sel = s.id === state.sel;
-        g += `<g class="pin" data-act="view" data-id="${s.id}" tabindex="0" role="button" opacity="${match.has(s.id) ? 1 : .25}" aria-label="${esc(s.name)}">
-      <circle cx="${s.x}" cy="${s.y}" r="4.6" fill="var(--ink)" stroke="var(--surface)" stroke-width="1"/>
-      ${sel ? `<circle cx="${s.x}" cy="${s.y}" r="7" fill="none" stroke="var(--ink)" stroke-width=".7"/>` : ''}</g>`;
+// Leaflet map (OpenStreetMap tiles).
+let lmap = null, lpins = null, lme = null, lfit = false;
+function pinIcon(match, sel) {
+    return L.divIcon({
+        className: 'lpin-wrap',
+        html: `<span class="lpin${sel ? ' sel' : ''}${match ? '' : ' dim'}"></span>`,
+        iconSize: [26, 26], iconAnchor: [13, 13]
     });
-    const p = state.pos;
-    g += `<g aria-label="Your location"><rect x="${p.x - 2.4}" y="${p.y - 2.4}" width="4.8" height="4.8" transform="rotate(45 ${p.x} ${p.y})" fill="var(--surface)" stroke="var(--ink)" stroke-width="1"/><text x="${p.x}" y="${p.y + 7}" text-anchor="middle" font-size="2.8" font-weight="700" fill="var(--ink)" stroke="var(--surface2)" stroke-width="1" paint-order="stroke">You</text></g>`;
-    $('map').innerHTML = g;
 }
+function setPos(lat, lng, msg) {
+    state.pos = { lat, lng };
+    refreshAll();
+    if (msg) toast(msg);
+}
+function initMap() {
+    lmap = L.map('map', { zoomControl: true }).setView([state.pos.lat, state.pos.lng], 14);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
+    }).addTo(lmap);
+    lpins = L.layerGroup().addTo(lmap);
+    lme = L.marker([state.pos.lat, state.pos.lng], {
+        draggable: true, keyboard: true, title: 'Your location (drag to move)', zIndexOffset: 1000,
+        icon: L.divIcon({ className: 'lpin-wrap', html: '<span class="lme">You</span>', iconSize: [40, 22], iconAnchor: [20, 11] })
+    }).addTo(lmap);
+    lme.on('dragend', () => { const p = lme.getLatLng(); setPos(p.lat, p.lng, 'Location updated. Distances recalculated.'); });
+    lmap.on('click', e => setPos(e.latlng.lat, e.latlng.lng, 'Location updated. Distances recalculated.'));
+}
+function renderMap() {
+    const el = $('map');
+    if (!el) return;
+    if (typeof L === 'undefined') {
+        el.innerHTML = '<p class="empty">The map could not load. Check your internet connection and refresh.</p>';
+        return;
+    }
+    if (!lmap) initMap();
+    const match = new Set(filtered().map(s => s.id));
+    lpins.clearLayers();
+    spots.forEach(s => {
+        L.marker([s.lat, s.lng], {
+            icon: pinIcon(match.has(s.id), s.id === state.sel),
+            title: s.name, keyboard: true
+        }).bindTooltip(esc(s.name), { direction: 'top', offset: [0, -12] })
+          .on('click', () => openSpot(s.id))
+          .addTo(lpins);
+    });
+    lme.setLatLng([state.pos.lat, state.pos.lng]);
+    if (!lfit && spots.length) {   // zoom once so every spot and you are visible
+        lfit = true;
+        lmap.fitBounds(L.latLngBounds([...spots.map(s => [s.lat, s.lng]), [state.pos.lat, state.pos.lng]]), { padding: [30, 30], maxZoom: 16 });
+    }
+    setTimeout(() => lmap.invalidateSize(), 0);
+}
+function locateMe() {
+    if (!navigator.geolocation) return toast('Your browser cannot share its location.');
+    navigator.geolocation.getCurrentPosition(
+        p => { setPos(p.coords.latitude, p.coords.longitude, 'Using your current location.'); if (lmap) lmap.setView([state.pos.lat, state.pos.lng], 16); },
+        () => toast('Could not get your location. Allow location access, or click the map to set it.'),
+        { enableHighAccuracy: true, timeout: 10000 });
+}
+on('locBtn', 'click', locateMe);
 
 // =====================================================
 // game.js: Levels, daily streaks, badge unlocks,
@@ -435,18 +522,22 @@ function levelOf(pts) {
     return { idx, cur, next, toNext: next ? next.min - pts : 0, pct: next ? Math.round((pts - cur.min) / (next.min - cur.min) * 100) : 100 };
 }
 
-// ---- saved progress (per username) ----
+// saved progress (per username)
 let game = null, gameFor = null;
 function G() {
     if (gameFor !== user.userName) {
         gameFor = user.userName;
         let all = {};
         try { all = JSON.parse(localStorage.getItem(GAME_KEY)) || {}; } catch (e) { }
-        game = Object.assign({ last: '', streak: 0, best: 0, days: [], wk: '', wkPts: 0, lvl: null, seen: null, fresh: [] }, all[gameFor] || {});
+        game = Object.assign({ last: '', streak: 0, best: 0, days: [], wk: '', wkPts: 0, log: null, lvl: null, seen: null, unlocked: [], fresh: [] }, all[gameFor] || {});
+        if (!game.log) game.log = game.wkPts > 0 ? [{ t: Date.now(), n: game.wkPts }] : [];                                         // older saves had only a weekly total
     }
     const wk = dayKey(weekStart());
-    if (game.wk !== wk) { game.wk = wk; game.wkPts = 0; }                       // new week, board resets
-    if (game.last && game.last !== dayKey(new Date()) && game.last !== dayKey(addDays(new Date(), -1))) game.streak = 0;   // missed a day
+    game.wk = wk;
+    const since = weekStart().getTime();
+    game.log = game.log.filter(e => e.t >= since);                                                                                  // new week: older entries drop off, board resets
+    game.wkPts = game.log.reduce((t, e) => t + e.n, 0);                                                                             // weekly points = what was earned since Monday
+    if (game.last && game.last !== dayKey(new Date()) && game.last !== dayKey(addDays(new Date(), -1))) game.streak = 0;            // missed a day
     return game;
 }
 function gameSave() {
@@ -460,7 +551,7 @@ function gameSave() {
 function track(gain) {
     if (!loggedIn) return;
     const g = G(), today = dayKey(new Date());
-    if (gain > 0) g.wkPts += gain;
+    if (gain > 0) { g.log.push({ t: Date.now(), n: gain }); g.wkPts += gain; }
     if (g.last !== today) {
         g.streak = g.last === dayKey(addDays(new Date(), -1)) ? g.streak + 1 : 1;
         g.last = today;
@@ -477,6 +568,7 @@ function gameSync() {
     const g = G();
     user.streak = g.streak;
     user.bestStreak = g.best;
+    user.unlocked = new Set(g.unlocked || []);   // badges earned earlier stay unlocked
     const all = user.badges(), earned = all.filter(b => b.earned).map(b => b.id), lvl = levelOf(user.points).idx;
     if (g.seen === null) { g.seen = earned; g.lvl = lvl; }   // first visit: record what they already have, no popups
     else {
@@ -488,25 +580,27 @@ function gameSync() {
         g.seen = earned;
         g.lvl = lvl;
     }
+    g.unlocked = earned;   // remember every earned badge for good (earned only ever grows)
+    user.unlocked = new Set(earned);
     gameSave();
     renderChip();
 }
 
-// ---- weekly leaderboard (sample students grow through the week) ----
+// weekly leaderboard 
 function rivalPts(name, wk) {
     let h = 0;
     for (const c of name + wk) h = (h * 31 + c.charCodeAt(0)) >>> 0;
     const now = new Date(), frac = ((now.getDay() + 6) % 7 + now.getHours() / 24) / 7;
-    return Math.round((40 + h % 80) * Math.min(1, frac + 0.1));
+    return Math.round((10 + h % 50) * Math.min(1, frac + 0.1));   // sample students: a realistic 10-60 points a week
 }
 function weeklyBoard() {
     const wk = dayKey(weekStart());
-    const rows = [...RIVALS.map(n => ({ n, p: rivalPts(n, wk), me: false })), { n: user.userName, p: G().wkPts, me: true }];
-    rows.sort((a, b) => b.p - a.p || (a.me ? 1 : -1));
+    const rows = [...RIVALS.map(n => ({ n, p: rivalPts(n, wk), me: false })), { n: user.userName, p: Math.min(G().wkPts, user.points), me: true }];
+    rows.sort((a, b) => b.p - a.p || (a.me ? -1 : b.me ? 1 : a.n.localeCompare(b.n)));
     return rows.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
-// ---- unlock popup with confetti ----
+// unlock popup with confetti animation
 const celebrateQ = [];
 let celebrating = false;
 function queueCelebration(c) { celebrateQ.push(c); if (!celebrating) nextCelebration(); }
@@ -518,7 +612,7 @@ function nextCelebration() {
     if (!host) {
         host = document.createElement('div');
         host.id = 'celebrate';
-        host.setAttribute('popover', 'manual');   // top layer, so it also shows above open dialogs
+        host.setAttribute('popover', 'manual');   // top layer
         host.setAttribute('role', 'status');
         host.setAttribute('aria-live', 'polite');
         document.body.appendChild(host);
@@ -546,7 +640,7 @@ function nextCelebration() {
 // leaderboard, verification.
 // =====================================================
 
-const verdict = r => r.net() >= 3 ? 'Verified' : r.net() <= -1 ? 'Disputed' : 'Needs votes';
+const verdict = r => r.net() >= 3 ? 'Verified' : r.net() <= -1 ? 'Disputed' : 'Comment';
 function busyBars(s) {
     const nowH = new Date().getHours();
     return s.busy.map((v, i) => { const h = 8 + i; return `<div class="${h === nowH ? 'now' : ''}" title="${fmtHour(h)}: ${v}% busy"><b style="height:${Math.max(6, v * .72)}px"></b><span>${i % 2 === 0 ? shortHour(h) : ' '}</span></div>`; }).join('');
@@ -564,7 +658,6 @@ function renderProfilePanel() {
     if (!byId(state.dashSpot))
         state.dashSpot = spots[0].id;
     const s = byId(state.dashSpot), d = s.distance(state.pos), best = s.bestTime();
-    const q = encodeURIComponent(s.name + ' Alangilan Batangas City');
     $('dProfile').innerHTML = `
     <h3 class="ph3">Spot profile</h3>
     <p class="meta" style="margin-bottom:10px">Everything about a place in one view: description, hours, location, facilities, rules, and busy hours.</p>
@@ -591,8 +684,8 @@ function renderProfilePanel() {
     <div class="acts" style="margin-top:16px;flex-wrap:wrap">
       <button class="btn solid" data-act="view" data-id="${s.id}">All photos and reports</button>
       <button class="btn" data-act="report" data-id="${s.id}">Report status</button>
-      <a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${q}">Google Maps</a>
-      <a class="btn" target="_blank" rel="noopener" href="https://waze.com/ul?q=${q}">Waze</a>
+      <a class="btn" target="_blank" rel="noopener" href="${gmapsDir(s)}">Google Maps</a>
+      <a class="btn" target="_blank" rel="noopener" href="${wazeDir(s)}">Waze</a>
     </div>`;
 }
 function renderPicks() {
@@ -636,7 +729,8 @@ function renderPicks() {
     </div></div>
     <p class="legend" style="margin-top:8px"><span class="lg"><i style="--v:.1"></i> Quiet</span><span class="lg"><i style="--v:.9"></i> Busy</span><span class="lg"><i class="off"></i> Closed</span></p>`;
 }
-let freshNow = new Set(), freshTimer = null;   // badges that should play the unlock animation on the shelf
+// badges that play the unlock animation on the shelf
+let freshNow = new Set(), freshTimer = null;
 function renderRewards() {
     const pts = user.points, L = levelOf(pts), g = G(), today = dayKey(new Date()), ws = weekStart();
     if (g.fresh.length) {
@@ -684,18 +778,18 @@ function renderRewards() {
       </div>
       <div>
         <h3 class="sec" style="margin-top:0">This week's leaderboard</h3>
-        <p class="meta" style="margin-bottom:10px">${left <= 1 ? 'Resets at midnight tonight' : `Resets Monday, in ${left} days`}. Other students are sample data.</p>
+        <p class="meta" style="margin-bottom:10px">Points earned since Monday. ${left <= 1 ? 'Resets at midnight tonight' : `Resets Monday, in ${left} days`}. Other students are sample data.</p>
         <ol class="wk">${shown.map(row).join('')}${me.rank > 5 ? `<li class="gap" aria-hidden="true">...</li>${row(me)}` : ''}</ol>
-        <p class="meta" style="margin-top:8px">${above ? `${above.p - me.p + 1} points to pass ${esc(above.n)}.` : 'You lead the board this week.'}</p>
+        <p class="meta" style="margin-top:8px">${above ? `${above.p - me.p + 1} ${above.p - me.p + 1 === 1 ? 'point' : 'points'} to pass ${esc(above.n)}.` : 'You lead the board this week.'} You earned ${me.p} this week; ${user.points} in total.</p>
       </div>
       <div>
         <h3 class="sec" style="margin-top:0">How to earn points</h3>
         <ul class="earn">
-          <li><b>+10</b> Send a status report</li>
-          <li><b>+25</b> Add a new study spot</li>
-          <li><b>+5</b> Share a photo of a spot</li>
-          <li><b>+2</b> Another student upvotes your report</li>
-          <li><b>+15</b> Your report is verified by the community</li>
+          <li><b>+${POINTS.report}</b> Send a status report</li>
+          <li><b>+${POINTS.spot}</b> Add a new study spot</li>
+          <li><b>+${POINTS.photo}</b> Share a photo of a spot</li>
+          <li><b>+${POINTS.comment}</b> Write feedback on a spot</li>
+          <li><b>+${POINTS.rating}</b> Rate a spot</li>
         </ul>
         <p class="meta" style="margin-top:10px">Any of these also counts for today's streak.</p>
       </div>
@@ -703,7 +797,36 @@ function renderRewards() {
     <h3 class="sec">Badge shelf (${earnedN} of ${user.badges().length})</h3>
     <div class="shelf">${shelf}</div>`;
 }
-function renderDash() { if (!$('stats')) return; renderStats(); renderProfilePanel(); renderPicks(); renderRewards(); }
+// Dashboard panel: the spots this account added, with View and Delete.
+function renderMySpots() {
+    const box = $('dMySpots');
+    const mine = loggedIn ? spots.filter(s => s.owner && s.owner.toLowerCase() === user.userName.toLowerCase()) : [];
+    const rows = mine.map(s => `<tr>
+      <td><strong>${esc(s.name)}</strong><div class="meta">${esc(s.address || '')}</div></td>
+      <td>${esc(s.kind)}</td>
+      <td>${NOISE[s.noise]} noise, ${CROWD[s.crowd]} crowd</td>
+      <td>${esc(s.priceLabel())}</td>
+      <td><div class="acts">
+        <button class="btn sm" data-act="view" data-id="${s.id}">View</button>
+        <button class="btn sm danger" data-act="del-spot" data-id="${s.id}" aria-label="Delete ${esc(s.name)}">Delete</button>
+      </div></td></tr>`).join('');
+    box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <h3 class="sec" style="margin:0">My spots (${mine.length})</h3>
+      <button class="btn sm solid" data-act="go-add">+ Add a spot</button>
+    </div>
+    <p class="meta" style="margin:6px 0 12px">Spots you added. You can remove them here. They are deleted too if you delete your account.</p>
+    ${mine.length ? `<div class="tablewrap"><table><thead><tr><th>Spot</th><th>Type</th><th>Conditions</th><th>Price</th><th>Manage</th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : `<p class="empty">You have not added any spots yet.</p>`}`;
+}
+function renderDash() {
+    if ($('stats')) renderStats();
+    if ($('dProfile')) renderProfilePanel();
+    if ($('dVerify')) renderPicks();
+    if ($('dRewards')) renderRewards();
+    if ($('dMySpots')) renderMySpots();
+    if ($('acDetails')) renderAccountDetails();
+}
 
 // =====================================================
 // spot-detail.js: Spot detail popup, status reports, 
@@ -715,7 +838,6 @@ function renderTop() {
     if (!s)
         return;
     const d = s.distance(state.pos), fav = user.favoriteSpots.has(s.id), best = s.bestTime(), nowH = new Date().getHours();
-    const q = encodeURIComponent(s.name + ' Alangilan Batangas City');
     const bars = busyBars(s);
     $('dTop').innerHTML = `
     <div class="dhead">
@@ -738,23 +860,40 @@ function renderTop() {
     <div class="bars" role="img" aria-label="Bar chart of usual busy hours from 8 AM to 8 PM. The hatched bar is the current hour.">${bars}</div>
     <p class="meta">${best ? `Usually least busy around ${fmtHour(best.h)} from now until closing.` : 'Closed for the rest of today.'}</p>
     <div class="acts" style="margin-top:14px;flex-wrap:wrap">
-      <a class="btn solid" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${q}">Directions in Google Maps</a>
-      <a class="btn" target="_blank" rel="noopener" href="https://waze.com/ul?q=${q}">Open in Waze</a></div>`;
+      <a class="btn solid" target="_blank" rel="noopener" href="${gmapsDir(s)}">Directions in Google Maps</a>
+      <a class="btn" target="_blank" rel="noopener" href="${wazeDir(s)}">Open in Waze</a></div>`;
+}
+function detailReportHTML(r) {
+    return `<div class="report"><div>
+      <p><strong>${esc(r.user)}${r.mine ? ' (you)' : ''}</strong> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span> <span class="meta">${ago(r.ts)}</span></p>
+      <p class="meta">${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd${r.net() < 3 && r.net() > -1 ? `. Needs ${3 - r.net()} more ${3 - r.net() === 1 ? 'upvote' : 'upvotes'} to be verified` : ''}</p>${r.note ? `<p>${esc(r.note)}</p>` : ''}</div>
+      <div class="votes" aria-label="Is this report accurate?">
+        <button data-act="vote" data-id="${r.id}" data-dir="1" aria-pressed="${r.myVote === 1}" aria-label="Upvote, report is accurate">▲</button>
+        <span>${r.net()}</span>
+        <button data-act="vote" data-id="${r.id}" data-dir="-1" aria-pressed="${r.myVote === -1}" aria-label="Downvote, report is not accurate">▼</button>
+      </div></div>`;
+}
+function detailCommentHTML(s, m, i) {
+    const mine = isMe(m.user);
+    return `<div class="report"><div>
+      <p><strong>${esc(m.user)}${mine ? ' (you)' : ''}</strong> <span class="tag ${cmNet(m) >= 3 ? 'solid' : ''}" style="margin-left:4px">${cmVerdict(m)}</span> <span class="meta">${ago(m.ts)}</span></p>
+      ${cmNeedsMsg(m) ? `<p class="meta">Comment. ${cmNeedsMsg(m)}</p>` : ''}<p>${esc(m.text)}</p>${mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}</div>
+      <div class="votes" aria-label="Is this comment helpful?">
+        <button data-act="cm-like" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === 1}" aria-label="Upvote, helpful">▲</button>
+        <span>${cmNet(m)}</span>
+        <button data-act="cm-down" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === -1}" aria-label="Downvote, not helpful">▼</button>
+      </div></div>`;
 }
 function renderReports() {
     const s = byId(state.sel);
     if (!s)
         return;
-    $('dReports').innerHTML = `<h3 class="sec" style="margin-top:22px">Recent reports</h3>` +
-        (s.reports.length ? s.reports.map(r => `<div class="report"><div>
-      <p><strong>${esc(r.user)}${r.mine ? ' (you)' : ''}</strong> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span> <span class="meta">${ago(r.ts)}</span></p>
-      <p class="meta">${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd${r.net() < 3 && r.net() > -1 ? `. Needs ${3 - r.net()} more ${3 - r.net() === 1 ? 'upvote' : 'upvotes'} to be verified` : ''}</p>${r.note ? `<p>${esc(r.note)}</p>` : ''}</div>
-      <div class="votes" aria-label="Is this report accurate?">
-        <button data-act="vote" data-id="${r.id}" data-dir="1" aria-pressed="${r.myVote === 1}" aria-label="Upvote, report is accurate" ${r.mine ? 'disabled' : ''}>▲</button>
-        <span>${r.net()}</span>
-        <button data-act="vote" data-id="${r.id}" data-dir="-1" aria-pressed="${r.myVote === -1}" aria-label="Downvote, report is not accurate" ${r.mine ? 'disabled' : ''}>▼</button>
-      </div></div>`).join('') : '<div class="empty">No reports yet. Be the first to send an update.</div>') +
-        ``;
+    // Reports and comments in one list, newest first (same items as the Feed).
+    const items = s.reports.map(r => ({ ts: r.ts, html: detailReportHTML(r) }));
+    soc(s).comments.forEach((m, i) => items.push({ ts: m.ts, html: detailCommentHTML(s, m, i) }));
+    items.sort((x, y) => y.ts - x.ts);
+    $('dReports').innerHTML = `<h3 class="sec" style="margin-top:22px">Recent reports and comments</h3>` +
+        (items.length ? items.map(x => x.html).join('') : '<div class="empty">No reports yet. Be the first to send an update.</div>');
 }
 function renderPhotos(keepErr) {
     const s = byId(state.sel);
@@ -822,11 +961,11 @@ async function uploadPhoto(file) {
     try {
         const src = await loadImage(file);
         s.addPhoto(new Photo({
-            id: pid++, user: user.userName, mine: true, src, caption: $('ph-cap').value.trim(), ts: Date.now()
+            id: pid++, user: user.userName, src, caption: $('ph-cap').value.trim(), ts: Date.now()
         }));
         user.photosAdded++;
         refreshAll();
-        award(5, 'photo added');
+        award(POINTS.photo, 'photo added');
     }
     catch (ex) {
         err.textContent = ex.message;
@@ -913,7 +1052,8 @@ on('reportForm', 'submit', async e => {
             user: user.userName,
             noise, crowd, note,
             ts: Date.now(),
-            up: 0, down: 0, mine: true
+            up: 1, down: 0,
+            votes: { [meKey()]: 1 }   // your own report starts with your upvote
         });
         s.reports.unshift(report);
 
@@ -930,11 +1070,11 @@ on('reportForm', 'submit', async e => {
         }
         s.updatedAt = Date.now();
 
-        // Points (use the server's total when it is higher, never lower the student's points)
+        // Points
         user.reportsMade++;
-        const gain = (typeof data.points === 'number' && data.points > user.points) ? data.points - user.points : 5;
+        const gain = POINTS.report;
         user.points += gain;
-        track(gain);   // streak and weekly leaderboard
+        track(gain);                                            // streak and weekly leaderboard
 
         toast(`Report submitted! +${gain} points`);
         $('dlgReport').close();
@@ -979,12 +1119,12 @@ on('addForm', 'submit', async e => {
         const description = $('a-desc').value.trim();
         const rules       = $('a-rules').value.trim();
 
-        // small random offset so pins don’t stack exactly on the user’s location
-        const jit = () => (Math.random() - 0.5) * 8;
-        const x = Math.min(94, Math.max(6, state.pos.x + jit()));
-        const y = Math.min(64, Math.max(6, state.pos.y + jit()));
+        // small random offset so pins
+        const jit = () => (Math.random() - 0.5) * 0.0008;       // about 40 m
+        const x = +(state.pos.lng + jit()).toFixed(6);          // longitude
+        const y = +(state.pos.lat + jit()).toFixed(6);          // latitude
 
-        // Send to backend first
+        // Send to backend
         const res = await fetch('/api/add-spot', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -998,7 +1138,8 @@ on('addForm', 'submit', async e => {
                 mbps,
                 noise, crowd,
                 outlets, aircon, food,
-                description, rules
+                description, rules,
+                username: user.userName
             })
         });
 
@@ -1016,6 +1157,7 @@ on('addForm', 'submit', async e => {
             noise, crowd,
             rules, description,
             isNew: true,
+            owner: user.userName,
             fac: {
                 wifi: mbps > 0,
                 mbps,
@@ -1026,7 +1168,7 @@ on('addForm', 'submit', async e => {
         // Attach the chosen photo (if any) to the new spot
         if (addPhotoSrc) {
             spot.addPhoto(new Photo({
-                id: pid++, user: user.userName, mine: true, src: addPhotoSrc, caption: name, ts: Date.now()
+                id: pid++, user: user.userName, src: addPhotoSrc, caption: name, ts: Date.now()
             }));
             user.photosAdded++;
         }
@@ -1041,7 +1183,7 @@ on('addForm', 'submit', async e => {
         clearFilters();
         state.sel = spot.id;
         refreshAll();
-        award(25, 'new study spot added');
+        award(POINTS.spot, 'new study spot added');
         save();
 
     } catch (ex) {
@@ -1055,14 +1197,16 @@ function vote(id, dir) {
     if (!found)
         return;
     const { s, r } = found;
-    if (r.myVote === 1)
+    const cur = r.myVote;
+    if (cur === 1)
         r.up--;
-    if (r.myVote === -1)
+    if (cur === -1)
         r.down--;
-    r.myVote = r.myVote === dir ? 0 : dir;
-    if (r.myVote === 1)
+    const next = cur === dir ? 0 : dir;
+    if (next === 0) delete r.votes[meKey()]; else r.votes[meKey()] = next;
+    if (next === 1)
         r.up++;
-    if (r.myVote === -1)
+    if (next === -1)
         r.down++;
     if (r.net() <= -3) {
         s.reports = s.reports.filter(x => x !== r);
@@ -1118,6 +1262,10 @@ document.addEventListener('click', e => {
         go('spots');
     }
 }
+    if (act === 'del-spot') {
+        deleteSpot(id);
+        return;
+    }
     if (act === 'view')
         openSpot(id);
     if (act === 'report')
@@ -1144,17 +1292,6 @@ document.addEventListener('keydown', e => {
         e.preventDefault();
         openSpot(+e.target.dataset.id);
     }
-});
-if ($('map')) $('map').addEventListener('click', e => {
-    if (e.target.closest('.pin'))
-        return;
-    const svg = $('map'), pt = svg.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
-    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
-    state.pos = { x: Math.min(97, Math.max(3, p.x)), y: Math.min(67, Math.max(3, p.y)) };
-    refreshAll();
-    toast('Location updated. Distances recalculated.');
 });
 [
     'q', 'fNoise', 'fCrowd', 'fPrice', 'fSort', 'cWifi', 'cOutlets', 'cOpen', 'cSaved'
@@ -1215,15 +1352,26 @@ function soc(s) {
             }))
         };
     }
-    social[s.id].comments.forEach((m, i) => {   // sample votes from other students, set once
-        if (!m.mine && m.up === undefined && m.down === undefined) {
-            const h = hsh(s);
-            m.up = 1 + (h + i * 5) % 8;
-            m.down = (h + i * 3) % 3;
-        }
-    });
-    return social[s.id];
+    return socUpgrade(social[s.id]);
 }
+function socUpgrade(e) {
+    if (!e.v2) {   // data saved by the old version
+        // The sample comments are gone: the feed now shows this spot's real reports (same list as in Details).
+        // Only comments a student really typed (they had mine: true) are kept, under the name that wrote them.
+        e.comments = (e.comments || []).filter(m => m.mine).map(m => {
+            const o = { user: m.user, text: m.text, ts: m.ts, up: m.up || 0, down: m.down || 0, votes: {} };
+            const v = m.vote ?? (m.liked ? 1 : 0);
+            if (v && LEGACY_OWNER) o.votes[LEGACY_OWNER] = v;
+            return o;
+        });
+        e.rates = {};
+        if (e.mine && LEGACY_OWNER) e.rates[LEGACY_OWNER] = e.mine;
+        delete e.mine;
+        e.v2 = true;
+    }
+    return e;
+}
+const myRate = sc => (sc.rates || {})[meKey()] || 0;
 function spotArt(s) {
     const h = hsh(s) % 360, k = s.kind + ' ' + s.name, t = /caf|coffee|espresso|food|resto/i.test(k) ? 'c' : /lib|study room|reading/i.test(k) ? 'l' : 'd';
     const c = (l, sat) => `hsl(${h} ${sat || 40}% ${l}%)`;
@@ -1246,8 +1394,10 @@ function spotArt(s) {
     return 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400">${g}</svg>`);
 }
 // Comment votes: m.up and m.down are totals, m.vote is this student's own vote (1, -1 or 0).
-const cmMine = m => m.vote ?? (m.liked ? 1 : 0);
+const cmMine = m => (m.votes || {})[meKey()] || 0;
 const cmNet = m => (m.up || 0) - (m.down || 0);
+const cmVerdict = m => cmNet(m) >= 3 ? 'Verified' : cmNet(m) <= -1 ? 'Disputed' : 'Comment';
+const cmNeedsMsg = m => cmNet(m) < 3 && cmNet(m) > -1 ? `Needs ${3 - cmNet(m)} more ${3 - cmNet(m) === 1 ? 'upvote' : 'upvotes'} to be verified` : '';
 function cmVote(m, dir) {
     const cur = cmMine(m);
     if (cur === 1) m.up = (m.up || 0) - 1;
@@ -1255,8 +1405,25 @@ function cmVote(m, dir) {
     const next = cur === dir ? 0 : dir;
     if (next === 1) m.up = (m.up || 0) + 1;
     if (next === -1) m.down = (m.down || 0) + 1;
-    m.vote = next;
-    delete m.liked;
+    m.votes = m.votes || {};
+    if (next === 0) delete m.votes[meKey()]; else m.votes[meKey()] = next;
+}
+// One list for the Feed: the spot's reports (the same ones as "Recent reports" in Details, same votes)
+// plus the comments students typed. Newest first.
+function feedReportHTML(r) {
+    const mine = r.mine, v = r.myVote;
+    return `<div class="cm"><span class="av">${esc(r.user[0].toUpperCase())}</span><div class="bub"><b>${esc(r.user)}${mine ? ' (you)' : ''}</b> <small>${ago(r.ts)}</small> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span>
+      <p>${esc(r.note || `${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd`)}</p>${r.note ? `<p class="meta" style="margin:0 0 4px">${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd</p>` : ''}
+      <span class="cvote" role="group" aria-label="Is this report accurate? Score ${r.net()}"><button class="lk up" data-act="vote" data-id="${r.id}" data-dir="1" aria-pressed="${v === 1}" aria-label="Upvote, report is accurate">▲</button><span class="cscore ${v === 1 ? 'pos' : v === -1 ? 'neg' : ''}" aria-live="polite">${r.net()}</span><button class="lk down" data-act="vote" data-id="${r.id}" data-dir="-1" aria-pressed="${v === -1}" aria-label="Downvote, report is not accurate">▼</button></span></div></div>`;
+}
+function feedCommentHTML(s, m, i) {
+    const mine = isMe(m.user);
+    return `<div class="cm ${cmNet(m) <= -3 ? 'low' : ''}"><span class="av">${esc(m.user[0].toUpperCase())}</span><div class="bub"><b>${esc(m.user)}${mine ? ' (you)' : ''}</b> <small>${ago(m.ts)}</small> <span class="tag ${cmNet(m) >= 3 ? 'solid' : ''}" style="margin-left:4px">${cmVerdict(m)}</span><p>${esc(m.text)}</p><span class="cvote" role="group" aria-label="Votes on this comment, score ${cmNet(m)}"><button class="lk up" data-act="cm-like" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === 1}" aria-label="Upvote, helpful">▲</button><span class="cscore ${cmMine(m) === 1 ? 'pos' : cmMine(m) === -1 ? 'neg' : ''}" aria-live="polite">${cmNet(m)}</span><button class="lk down" data-act="cm-down" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === -1}" aria-label="Downvote, not helpful">▼</button></span>${mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}${cmNet(m) <= -3 ? '<span class="lowtag">Downvoted by students</span>' : ''}</div></div>`;
+}
+function feedItems(s, sc) {
+    const items = s.reports.map(r => ({ ts: r.ts, html: feedReportHTML(r) }));
+    sc.comments.forEach((m, i) => items.push({ ts: m.ts, html: feedCommentHTML(s, m, i) }));
+    return items.sort((x, y) => y.ts - x.ts);
 }
 function renderFeed() {
     if (!$('feed')) return;
@@ -1268,17 +1435,17 @@ function renderFeed() {
         return;
     }
     $('feed').innerHTML = list.map(s => {
-        const sc = soc(s), avg = sc.sum / sc.count, fill = Math.round(sc.mine || avg), fav = user.favoriteSpots.has(s.id), d = s.distance(state.pos);
+        const sc = soc(s), avg = sc.sum / sc.count, fill = Math.round(myRate(sc) || avg), fav = user.favoriteSpots.has(s.id), d = s.distance(state.pos);
         const real = s.photos.length > 0, img = real ? s.photos[0].src : spotArt(s);
         const stars = [1, 2, 3, 4, 5].map(i => `<button class="star ${i <= fill ? 'on' : ''}" data-act="rate" data-id="${s.id}" data-n="${i}" aria-label="Rate ${i} of 5 stars">★</button>`).join('');
-        const cms = sc.open ? `<div class="cms">${sc.comments.map((m, i) => `<div class="cm ${cmNet(m) <= -3 ? 'low' : ''}"><span class="av">${esc(m.user[0].toUpperCase())}</span><div class="bub"><b>${esc(m.user)}${m.mine ? ' (you)' : ''}</b> <small>${ago(m.ts)}</small><p>${esc(m.text)}</p><span class="cvote" role="group" aria-label="Votes on this comment"><button class="lk" data-act="cm-like" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === 1}" aria-label="Upvote, helpful. ${m.up || 0} upvotes" ${m.mine ? 'disabled' : ''}>▲ ${m.up || 0}</button><button class="lk" data-act="cm-down" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === -1}" aria-label="Downvote, not helpful. ${m.down || 0} downvotes" ${m.mine ? 'disabled' : ''}>▼ ${m.down || 0}</button></span>${m.mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}${cmNet(m) <= -3 ? '<span class="lowtag">Downvoted by students</span>' : ''}</div></div>`).join('')}
+        const cms = sc.open ? `<div class="cms">${feedItems(s, sc).map(it => it.html).join('')}
       <div class="cmrow"><input type="text" class="cm-in" data-id="${s.id}" placeholder="Write feedback about this spot" value="${esc(sc.draft)}" aria-label="Comment on ${esc(s.name)}"><button class="btn solid sm" data-act="cm-post" data-id="${s.id}">Post</button></div></div>` : '';
         return `<article class="card post">
       <header><span class="av">${esc(s.name[0])}</span><div><h3>${esc(s.name)}</h3><small>${esc(s.kind)}${s.isOpen ? '' : ', closed now'} · ${Math.max(1, Math.round(d / 60))} min walk (${d} m)</small></div>${s.isNew ? '<span class="tag solid">New</span>' : ''}</header>
       <button class="pic" data-act="view" data-id="${s.id}" aria-label="Open details of ${esc(s.name)}"><img src="${img}" alt="${real ? 'Photo' : 'Illustration'} of ${esc(s.name)}">${real ? '' : '<span class="cap">Illustration · open the spot to add a real photo</span>'}</button>
       <div class="stat"><span class="lv">${meter(s.noise, NOISE[s.noise] + ' noise')} ${NOISE[s.noise]}</span><span class="lv">${meter(s.crowd, CROWD[s.crowd] + ' crowd')} ${CROWD[s.crowd]} crowd</span>${extra(s)}<small>Updated ${ago(s.updatedAt)}</small></div>
-      <div class="rate"><span class="stars" role="group" aria-label="Rating">${stars}</span><b>${avg.toFixed(1)}</b><small>(${sc.count} ratings)${sc.mine ? ', you rated ' + sc.mine : ''}</small></div>
-      <div class="acts"><button class="btn sm" data-act="cm-toggle" data-id="${s.id}">Comments (${sc.comments.length})</button><button class="btn sm" data-act="report" data-id="${s.id}">Report status</button><button class="btn sm" data-act="feed-photo" data-id="${s.id}">Add photo</button><button class="btn sm" data-act="share" data-id="${s.id}">Share</button><button class="btn sm" data-act="fav" data-id="${s.id}" aria-pressed="${fav}">${fav ? '★ Saved' : '☆ Save'}</button><button class="btn sm solid" data-act="view" data-id="${s.id}">Details</button></div>
+      <div class="rate"><span class="stars" role="group" aria-label="Rating">${stars}</span><b>${avg.toFixed(1)}</b><small>(${sc.count} ratings)${myRate(sc) ? ', you rated ' + myRate(sc) : ''}</small></div>
+      <div class="acts"><button class="btn sm" data-act="cm-toggle" data-id="${s.id}">Comments (${feedItems(s, sc).length})</button><button class="btn sm" data-act="report" data-id="${s.id}">Report status</button><button class="btn sm" data-act="feed-photo" data-id="${s.id}">Add photo</button><button class="btn sm" data-act="share" data-id="${s.id}">Share</button><button class="btn sm" data-act="fav" data-id="${s.id}" aria-pressed="${fav}">${fav ? '★ Saved' : '☆ Save'}</button><button class="btn sm solid" data-act="view" data-id="${s.id}">Details</button></div>
       ${cms}</article>`;
     }).join('');
 }
@@ -1289,14 +1456,14 @@ document.addEventListener('click', e => {
     const a = el.dataset.act, s = byId(+el.dataset.id);
     if (a === 'rate') {
         const sc = soc(s), n = +el.dataset.n;
-        if (sc.mine)
-            sc.sum -= sc.mine;
+        if (myRate(sc))
+            sc.sum -= myRate(sc);
         else {
             sc.count++;
-            award(2, 'rating shared');
+            award(POINTS.rating, 'rating shared');
         }
         sc.sum += n;
-        sc.mine = n;
+        sc.rates[meKey()] = n;
         renderFeed();
     }
     if (a === 'cm-toggle') {
@@ -1310,11 +1477,11 @@ document.addEventListener('click', e => {
             toast('Write a comment first.');
             return;
         }
-        sc.comments.push({ user: user.userName, text: txt, ts: Date.now(), mine: true });
+        sc.comments.push({ user: user.userName, text: txt, ts: Date.now(), up: 1, down: 0, votes: { [meKey()]: 1 } });   // starts with your upvote
         sc.draft = '';
         sc.open = true;
-        renderFeed();
-        award(3, 'feedback shared');
+        refreshAll();
+        award(POINTS.comment, 'feedback shared');
     }
 });
 document.addEventListener('input', e => { if (e.target.classList.contains('cm-in'))
@@ -1360,13 +1527,12 @@ document.addEventListener('click', e => {
     }
     if (a === 'cm-like' || a === 'cm-down') {
         const m = soc(s).comments[i];
-        if (m.mine) return;
         cmVote(m, a === 'cm-like' ? 1 : -1);
-        renderFeed();
+        refreshAll();
     }
     if (a === 'cm-del') {
         soc(s).comments.splice(i, 1);
-        renderFeed();
+        refreshAll();
         toast('Comment deleted');
     }
 });
@@ -1416,16 +1582,64 @@ function requireLogin(message, backTo) {
     go('login', message);
     return false;
 }
-function authDone(name) {
+// Only for spots a student added: the student who added it, or a faculty/staff account, may delete it.
+function canDeleteSpot(s) {
+    if (!loggedIn || !s || !s.owner) return false;
+    return s.owner.toLowerCase() === user.userName.toLowerCase() || ['Faculty', 'Staff'].includes(user.userType);
+}
+async function deleteSpot(id) {
+    const s = byId(id);
+    if (!s || !canDeleteSpot(s)) return;
+    if (!confirm(`Delete "${s.name}"? It will be removed for everyone, along with its photos and reports.`)) return;
+    try {
+        const res = await fetch('/api/delete-spot', { method: 'POST', body: new URLSearchParams({ username: user.userName, spotId: id }) });
+        const data = await res.json();
+        if (!data.ok) { toast(data.error || 'Could not delete this spot.'); return; }
+    } catch (e) { toast('Cannot reach the server. Make sure Main.java is running.'); return; }
+    spots = spots.filter(x => x.id !== id);
+    user.favoriteSpots.delete(id);
+    if (state.sel === id) state.sel = null;
+    ['dlgSpot', 'dlgReport'].forEach(d => { if ($(d) && $(d).open) $(d).close(); });
+    refreshAll();
+    toast('Spot deleted.');
+}
+function authDone(name, opts = {}) {   // opts.isNew is true right after sign up
     user = new User(name, 'Student');
     loggedIn = true;
     const b = $('authBtn');
     b.textContent = 'Logout';
     b.dataset.act = 'logout';
     refreshAll();
-    const dest = nextPage;
+    const dest = opts.isNew ? 'setup' : nextPage;   // a new account sets up its profile first (like Facebook)
     nextPage = 'home';
-    go(dest, `Welcome, ${name}!`);
+    go(dest, opts.isNew ? `Welcome to QuietSpot, ${name}! Let's set up your profile.` : `Welcome, ${name}!`);
+}
+// The browser says we are logged in but the server has no such account: log out here too and ask for a fresh login.
+// After a username change: everything the account wrote or voted on follows the new name.
+function renameAuthor(from, to) {
+    const f = from.toLowerCase(), t = to.toLowerCase();
+    const move = o => { if (f !== t && o && o[f] !== undefined) { o[t] = o[f]; delete o[f]; } };
+    spots.forEach(s => {
+        s.reports.forEach(r => { if (String(r.user).toLowerCase() === f) r.user = to; move(r.votes); });
+        s.photos.forEach(p => { if (p.user && String(p.user).toLowerCase() === f) p.user = to; });
+    });
+    Object.values(social).forEach(e => {
+        (e.comments || []).forEach(m => { if (String(m.user).toLowerCase() === f) m.user = to; move(m.votes); });
+        move(e.rates);
+    });
+}
+function accountGone() {
+    loggedIn = false;
+    user = new User('Guest', 'Student');
+    go('login', 'The server no longer has this account. Please log in again or sign up.');
+}
+async function verifyAccount() {
+    try {
+        const res = await fetch('/api/account/details', { method: 'POST', body: new URLSearchParams({ username: user.userName }) });
+        const data = await res.json();
+        if (!data.ok && data.error === 'Account not found.') return false;
+    } catch (e) { /* server not reachable: keep what the browser has */ }
+    return true;
 }
 document.addEventListener('click', e => {
     if (!e.target.closest('[data-act="logout"]')) return;
@@ -1475,17 +1689,175 @@ on('signupForm', 'submit', async e => {
     try {
         const res = await fetch('/api/signup', {
             method: 'POST',
-            body: new URLSearchParams({ username: u, password: p, userType: 'STUDENT' })
+            body: new URLSearchParams({ username: u, password: p, userType: 'STUDENT', email: $('s-mail').value.trim(), fullName: n })
         });
         const data = await res.json();
         if (!data.ok) {
             $('sErr').textContent = data.error;
             return;
         }
-        authDone(data.userName);
+        authDone(data.userName, { isNew: true });
     } catch (err) {
         $('sErr').textContent = 'Cannot connect to Java server. Make sure Main.java is running.';
     }
+});
+
+// =====================================================
+// account.js: Account page settings: change username,
+// password, and delete account. (The profile part of the
+// page is in profile.js.)
+// =====================================================
+
+let accountInfo = null;
+const capWord = w => String(w).charAt(0).toUpperCase() + String(w).slice(1).toLowerCase();
+function renderAccountDetails() {
+    const box = $('acDetails');
+    if (!box) return;
+    const L = levelOf(user.points), info = accountInfo || {};
+    let since = '-';
+    if (info.memberSince) {
+        const d = new Date(info.memberSince + 'T00:00:00');
+        since = isNaN(d) ? info.memberSince : d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    }
+    const rows = [
+        ['Username', user.userName], ['Account type', capWord(user.userType)],
+        ['Email', info.email || 'Not provided'], ['Member since', since],
+        ['Level', `Level ${L.idx + 1}, ${L.cur.n}`], ['Points', `${user.points} pts`],
+        ['Reports sent', user.reportsMade], ['Spots added', user.spotsAdded],
+        ['Photos shared', user.photosAdded], ['Favorite spots', user.favoriteSpots.size]
+    ];
+    box.innerHTML = `<h3>Account details</h3><dl class="det acdet">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
+}
+function fillAccount() {
+    if ($('ac-user')) $('ac-user').value = user.userName;
+}
+// Save the game state to localStorage under the current username.
+function migrateGame(from, to) {
+    if (from === to) return;
+    try {
+        if (game && gameFor === from) gameSave();
+        const all = JSON.parse(localStorage.getItem(GAME_KEY)) || {};
+        if (all[from]) { all[to] = all[from]; delete all[from]; localStorage.setItem(GAME_KEY, JSON.stringify(all)); }
+    } catch (e) { }
+    gameFor = null;
+}
+const NO_SERVER = 'Cannot connect to Java server. Make sure Main.java is running.';
+
+on('profileForm', 'submit', async e => {
+    e.preventDefault();
+    $('acErr').textContent = '';
+    try {
+        const res = await fetch('/api/account/update', {
+            method: 'POST',
+            body: new URLSearchParams({
+                username: user.userName,
+                newUsername: $('ac-user').value.trim(),
+                userType: String(user.userType).toUpperCase()
+            })
+        });
+        const data = await res.json();
+        if (!data.ok) { $('acErr').textContent = data.error; return; }
+        migrateGame(user.userName, data.userName);
+        renameAuthor(user.userName, data.userName);
+        user.userName = data.userName;
+        user.userType = data.userType.charAt(0) + data.userType.slice(1).toLowerCase();
+        if (typeof PF !== 'undefined' && PF) { PF.userName = user.userName; pfRender(); }   // profile header shows the new @username
+        refreshAll();
+        toast('Username updated.');
+    } catch (err) { $('acErr').textContent = NO_SERVER; }
+});
+
+on('pwForm', 'submit', async e => {
+    e.preventDefault();
+    $('pwErr').textContent = '';
+    if ($('pw-new').value !== $('pw-new2').value) {
+        $('pwErr').textContent = 'New passwords do not match.';
+        return;
+    }
+    try {
+        const res = await fetch('/api/account/password', {
+            method: 'POST',
+            body: new URLSearchParams({
+                username: user.userName,
+                oldPassword: $('pw-old').value,
+                newPassword: $('pw-new').value
+            })
+        });
+        const data = await res.json();
+        if (!data.ok) { $('pwErr').textContent = data.error; return; }
+        $('pwForm').reset();
+        toast('Password updated.');
+    } catch (err) { $('pwErr').textContent = NO_SERVER; }
+});
+
+// Delete Account: user must type their username and password to confirm deletion.
+function delRefresh() {
+    $('delGo').disabled = !($('del-confirm').value === user.userName && $('del-pass').value.length > 0);
+}
+on('delOpen', 'click', () => {
+    $('del-confirm').value = '';
+    $('del-pass').value = '';
+    $('delErr').textContent = '';
+    $('delName').textContent = user.userName;
+    $('delName2').textContent = user.userName;
+    delRefresh();
+    $('dlgDelete').showModal();
+});
+on('del-confirm', 'input', delRefresh);
+on('del-pass', 'input', delRefresh);
+on('delForm', 'submit', async e => {
+    e.preventDefault();
+    $('delErr').textContent = '';
+    if ($('del-confirm').value !== user.userName) return;
+    try {
+        const res = await fetch('/api/account/delete', {
+            method: 'POST',
+            body: new URLSearchParams({ username: user.userName, password: $('del-pass').value })
+        });
+        const data = await res.json();
+        if (!data.ok) { $('delErr').textContent = data.error; return; }
+        try {
+            const all = JSON.parse(localStorage.getItem(GAME_KEY)) || {};
+            delete all[user.userName];
+            localStorage.setItem(GAME_KEY, JSON.stringify(all));
+        } catch (x) { }
+        gameFor = null;
+        loggedIn = false;
+        user = new User('Guest', 'Student');
+        go('home', 'Your account was deleted.');
+    } catch (err) { $('delErr').textContent = NO_SERVER; }
+});
+
+// Forgot Password: user can reset their password by providing their username, email, and new password.
+on('forgotBtn', 'click', () => {
+    $('fp-user').value = $('l-user') ? $('l-user').value.trim() : '';
+    ['fp-mail', 'fp-new', 'fp-new2'].forEach(id => $(id).value = '');
+    $('fpErr').textContent = '';
+    $('dlgForgot').showModal();
+});
+on('forgotForm', 'submit', async e => {
+    e.preventDefault();
+    $('fpErr').textContent = '';
+    if ($('fp-new').value !== $('fp-new2').value) {
+        $('fpErr').textContent = 'New passwords do not match.';
+        return;
+    }
+    try {
+        const res = await fetch('/api/forgot-password', {
+            method: 'POST',
+            body: new URLSearchParams({
+                username: $('fp-user').value.trim(),
+                email: $('fp-mail').value.trim(),
+                newPassword: $('fp-new').value
+            })
+        });
+        const data = await res.json();
+        if (!data.ok) { $('fpErr').textContent = data.error; return; }
+        $('l-user').value = $('fp-user').value.trim();
+        $('l-pass').value = '';
+        $('dlgForgot').close();
+        toast('Password reset. You can log in now.');
+    } catch (err) { $('fpErr').textContent = NO_SERVER; }
 });
 
 // Sample reports from other students, added once per browser so the voting
@@ -1515,6 +1887,7 @@ function seedSampleReports() {
 const STORE = 'qs-data-v4';
 const Social = {};
 function save() {
+    if (!spots.length) return;   // the spots are not loaded yet (page left too early): saving now would erase the saved reports and photos
     const data = {
         loggedIn, pos: state.pos, rid, pid, social,
         user: {
@@ -1531,7 +1904,7 @@ function save() {
         localStorage.setItem(STORE, JSON.stringify(data));
     }
     catch (e) {
-        try {   // probably too many photos for the browser's storage limit: save everything except photos
+        try {
             data.spots.forEach(x => x.photos = []);
             localStorage.setItem(STORE, JSON.stringify(data));
         }
@@ -1545,20 +1918,21 @@ function loadState() {
     if (!d) return;
     try {
         loggedIn = !!d.loggedIn;
-        if (d.pos) state.pos = d.pos;
+        if (d.pos && Number.isFinite(d.pos.lat) && Number.isFinite(d.pos.lng)) state.pos = d.pos;
         rid = Math.max(rid, d.rid || 1);
         pid = Math.max(pid, d.pid || 1);
         Object.assign(social, d.social || {});
         const u = d.user || {};
+        LEGACY_OWNER = String(u.userName || '').toLowerCase();
+        Object.values(social).forEach(socUpgrade);   // old shared votes go to the account that was saved with them, before anyone else logs in
         user = new User(u.userName || 'Guest', u.userType || 'Student');
         Object.assign(user, { points: u.points ?? 20, reportsMade: u.reportsMade || 0, spotsAdded: u.spotsAdded || 0, photosAdded: u.photosAdded || 0 });
         user.favoriteSpots = new Set(u.fav || []);
         (d.spots || []).forEach(o => {
-            let s = byId(o.id);
-            if (!s) {   // a spot the user added earlier
-                s = new (TYPES[o.type] || StudySpot)({ ...o, fac: o.fac });
-                spots.push(s);
-            }
+            const s = byId(o.id);
+            // The server is the list of truth: a spot it no longer has (deleted, or lost in an old restart) stays gone,
+            // and a saved entry is only used if the name still matches (ids can be reused).
+            if (!s || s.name !== o.name) return;
             Object.assign(s, { noise: o.noise, crowd: o.crowd, updatedAt: o.updatedAt, busy: o.busy || s.busy });
             s.reports = (o.reports || []).map(r => new Report(r));
             if (o.photos && o.photos.length) s.photos = o.photos.map(p => new Photo(p));
@@ -1574,9 +1948,13 @@ window.addEventListener('pagehide', save);
 //=====================================================
 
 loadState();
-loadSpotsFromJava().then(ok => {
+loadSpotsFromJava().then(async ok => {
     if (!ok) return;
-    loadState();   // restore saved photos, reports and added spots AFTER the spots are loaded from Java
+    loadState();
+    if (loggedIn && !(await verifyAccount())) {
+        if (PUBLIC_PAGES.includes(CURRENT)) { loggedIn = false; user = new User('Guest', 'Student'); save(); }
+        else { accountGone(); return; }
+    }
     seedSampleReports();
     document.querySelectorAll('nav.main .pill').forEach(b =>
         b.setAttribute('aria-current', b.dataset.page === CURRENT ? 'page' : 'false')
@@ -1594,6 +1972,8 @@ loadSpotsFromJava().then(ok => {
         refreshAll();
         fillHours();
         if (CURRENT === 'reco') renderReco();
+        if (CURRENT === 'account') fillAccount();
+        if (CURRENT === 'account' || CURRENT === 'setup') initProfilePage();   // defined in profile.js
 
         let flash = null, wantAdd = false;
         try {

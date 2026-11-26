@@ -1,0 +1,169 @@
+/*
+=====================================================
+profile.css: Styles for the profile setup page (setup-profile.html)
+and the profile part of the Account page (account.html). Uses the same color
+variables as style.css, so every palette and Light/Dark works.
+=====================================================
+*/
+
+.pfwrap { max-width: 1100px; }
+
+/* ---------- Profile header (picture + name), used by the setup preview and the Account page ---------- */
+.pfhead { overflow: hidden; padding: 0; }
+
+.pf-body {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 24px;
+}
+
+.pf-avatar {
+  flex: none;
+  position: relative;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  border: 5px solid var(--surface);
+  background: var(--brand, var(--ink));
+  color: var(--on-brand, var(--on-ink));
+  display: grid;
+  place-items: center;
+  font-family: var(--head);
+  font-weight: 700;
+  font-size: 2.6rem;
+  box-shadow: 0 0 0 2px var(--ink);
+}
+.pf-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+
+.pf-id { flex: 1; min-width: 220px; }
+.pf-id h1 { font-size: 1.9rem; overflow-wrap: anywhere; }
+.pf-id .handle { color: var(--muted); font-weight: 700; margin: 2px 0 0; }
+.pf-id .bio { margin: 8px 0 0; max-width: 60ch; overflow-wrap: anywhere; }
+.pf-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.pf-chips .chip { cursor: default; }
+
+.pf-actions { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 12px; }
+
+/* little round camera button on the picture */
+.pf-cam {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0;
+}
+.pf-cam:hover { background: var(--surface2); }
+.pf-cam svg { width: 18px; height: 18px; }
+.pf-avatar .pf-cam { right: -2px; bottom: 2px; }
+
+/* ---------- Profile layout (Account page) ---------- */
+.pfgrid { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 18px; margin-top: 18px; align-items: start; }
+.pfcol { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.pfcard { padding: 20px; }
+.pfcard h3 { font-size: 1.1rem; margin-bottom: 12px; }
+
+.pfdet { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.pfdet li { display: flex; gap: 10px; align-items: flex-start; overflow-wrap: anywhere; }
+.pfdet svg { flex: none; width: 20px; height: 20px; margin-top: 2px; color: var(--muted); }
+.pfdet small { display: block; color: var(--muted); }
+.pfdet .none { color: var(--muted); font-style: italic; }
+
+.pftags { display: flex; flex-wrap: wrap; gap: 8px; }
+.pftag {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: .88rem;
+  font-weight: 700;
+  background: var(--surface2);
+}
+.pftag.pref { border-color: var(--ink); background: var(--surface); }
+
+/* profile strength bar */
+.pfmeter { height: 12px; border-radius: 999px; background: var(--surface2); border: 2px solid var(--ink); overflow: hidden; margin: 8px 0 12px; }
+.pfmeter i { display: block; height: 100%; background: var(--ink); border-radius: 999px; transition: width .4s; }
+.pftodo { margin: 0; padding-left: 20px; color: var(--muted); }
+.pftodo li { margin: 2px 0; }
+
+.pfstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+.pfstats div { border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; text-align: center; }
+.pfstats b { display: block; font-family: var(--head); font-size: 1.5rem; }
+.pfstats span { color: var(--muted); font-size: .85rem; font-weight: 700; }
+
+.pfbanner { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 14px 18px; margin-bottom: 18px; }
+.pfbanner p { margin: 0; }
+.pfbanner[hidden] { display: none; }
+
+/* ---------- Setup wizard ---------- */
+.sugrid { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 22px; align-items: start; }
+.suform { padding: 24px; }
+.suform h2 { font-size: 1.5rem; }
+.suform .sub { margin: 6px 0 16px; }
+.sustep { font-weight: 700; color: var(--muted); font-size: .85rem; margin: 0 0 8px; }
+.subar { height: 8px; border-radius: 999px; background: var(--surface2); border: 1.5px solid var(--ink); overflow: hidden; margin-bottom: 18px; }
+.subar i { display: block; height: 100%; background: var(--ink); transition: width .3s; }
+
+.pfform { display: flex; flex-direction: column; gap: 12px; }
+.pfform .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pfform input[type=date] {
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 12px;
+  width: 100%;
+}
+.pfform input[type=date]:focus { border-color: var(--ink); }
+.pfform .count { align-self: flex-end; color: var(--muted); font-size: .8rem; font-weight: 700; margin-top: -6px; }
+.pfform textarea { resize: vertical; min-height: 76px; }
+
+.pfpick { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 2px dashed var(--line); border-radius: 14px; }
+.pfpick .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.pfpick .meta { margin: 0; }
+.pfpick input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* toggle chips (study preferences) */
+.pfchips { display: flex; flex-wrap: wrap; gap: 8px; }
+.pfchips label { cursor: pointer; }
+.pfchips input { position: absolute; opacity: 0; pointer-events: none; }
+.pfchips span {
+  display: inline-block;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-weight: 700;
+  font-size: .92rem;
+  background: var(--surface);
+}
+.pfchips input:checked + span { border-color: var(--ink); background: var(--ink); color: var(--on-ink); }
+.pfchips input:focus-visible + span { outline: 3px solid var(--ink); outline-offset: 3px; }
+
+.sufoot { display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+.sufoot .r { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.supreview { position: sticky; top: 92px; }
+.supreview .lbl { font-weight: 700; color: var(--muted); font-size: .85rem; margin: 0 0 8px; }
+.supreview .pf-avatar { width: 96px; height: 96px; font-size: 1.9rem; border-width: 4px; }
+.supreview .pf-body { padding: 8px 18px 18px; }
+.supreview .pf-id h1 { font-size: 1.35rem; }
+
+.dlg .pfform { margin-top: 12px; }
+.dlg h4 { margin: 14px 0 0; font-family: var(--head); font-size: 1rem; }
+
+@media (max-width: 860px) {
+  .pfgrid, .sugrid { grid-template-columns: 1fr; }
+  .supreview { position: static; order: -1; }
+  .pf-body { padding: 16px; }
+  .pf-avatar { width: 108px; height: 108px; font-size: 2.1rem; }
+}
+@media (max-width: 520px) {
+  .pfform .two { grid-template-columns: 1fr; }
+}

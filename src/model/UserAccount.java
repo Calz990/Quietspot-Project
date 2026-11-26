@@ -3,6 +3,7 @@ package model;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -18,6 +19,9 @@ public class UserAccount {
     private int reportsMade;
     private int spotsAdded;
     private int photosAdded;
+    private String email;
+    private String createdAt;
+    private final UserProfile profile;   // name, photos, bio, school details, preferences
 
     // Constructor Overloading: Default User
     public UserAccount(String userName, String password) {
@@ -31,11 +35,42 @@ public class UserAccount {
         this.passwordHash = hash(password);
         this.points = INITIAL_POINTS;
         this.favoriteSpots = new HashSet<>();
+        this.createdAt = LocalDate.now().toString();
+        this.profile = new UserProfile(userName);   // full name starts as the username until the person sets one
     }
+
+    // Rebuilds an account that was saved to disk (see service.UserStore). The password hash is kept exactly as saved.
+    public static UserAccount restore(String userName, UserType userType, String passwordHash, int points,
+                                      int reportsMade, int spotsAdded, int photosAdded, String email,
+                                      String createdAt, Set<Integer> favorites) {
+        UserAccount u = new UserAccount(userName, "unused", userType);
+        u.passwordHash = passwordHash;
+        u.points = points;
+        u.reportsMade = reportsMade;
+        u.spotsAdded = spotsAdded;
+        u.photosAdded = photosAdded;
+        u.email = email;
+        if (createdAt != null && !createdAt.isBlank()) u.createdAt = createdAt;
+        u.favoriteSpots = new HashSet<>(favorites);
+        return u;
+    }
+
+    public String getPasswordHash() { return passwordHash; }
 
     public boolean checkPassword(String password) {
         return this.passwordHash.equals(hash(password));
     }
+
+    public void setPassword(String password) {
+        this.passwordHash = hash(password);
+    }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getCreatedAt() { return createdAt; }
+
+    public UserProfile getProfile() { return profile; }
 
     private String hash(String password) {
         try {

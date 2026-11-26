@@ -1,12 +1,14 @@
 package service;
 
 import model.*;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
 public class SpotRepository {
     private final List<SpotArea> spots = new ArrayList<>();
     private int nextId = 1;
+    private final SpotStore store = new SpotStore(Paths.get("data", "spots.tsv"));
 
     public int nextId() {
         return nextId++;
@@ -16,6 +18,40 @@ public class SpotRepository {
         if (spot == null) 
             throw new IllegalArgumentException("Spot cannot be null");
         spots.add(spot);
+        if (spot.getId() >= nextId) nextId = spot.getId() + 1;   // never hand out an id that is already used
+    }
+
+    // Brings back the spots students added before the server was last stopped (call after loadDefaultSpots).
+    public void loadUserSpots() {
+        for (SpotArea s : store.load()) addSpot(s);
+    }
+
+    // Writes the student-added spots to data/spots.tsv. Call after adding or deleting one.
+    public void saveUserSpots() {
+        store.save(spots);
+    }
+
+    // Returns true if a spot with this id existed and was removed.
+    public boolean removeById(int id) {
+        return spots.removeIf(s -> s.getId() == id);
+    }
+
+    // Removes every spot added by this user (used when their account is deleted). Returns how many were removed.
+    public int removeByOwner(String owner) {
+        int before = spots.size();
+        spots.removeIf(s -> !s.getCreatedBy().isEmpty() && s.getCreatedBy().equalsIgnoreCase(owner));
+        int removed = before - spots.size();
+        if (removed > 0) saveUserSpots();
+        return removed;
+    }
+
+    // When a student changes their username, the spots they added follow the new name.
+    public void renameOwner(String oldName, String newName) {
+        boolean changed = false;
+        for (SpotArea s : spots) {
+            if (s.getCreatedBy().equalsIgnoreCase(oldName)) { s.setCreatedBy(newName); changed = true; }
+        }
+        if (changed) saveUserSpots();
     }
 
     public List<SpotArea> getAll() {
@@ -58,6 +94,8 @@ public class SpotRepository {
         return results;
     }
 
+    // Coordinates below are x = longitude, y = latitude (used by the Leaflet map).
+    // Libro Espresso and But First, Coffee come from their Plus Codes; the other three are approximate.
     public void loadDefaultSpots() {
         // 1.Libro Espresso
         addSpot(
@@ -65,7 +103,7 @@ public class SpotRepository {
                 nextId(),
                 "Libro Espresso",
                 "Gulod Labac, Batangas City", 
-                82, 56, 
+                121.0698, 13.7899, 
                 new int[] {
                     11, 21
                 }, 
@@ -90,7 +128,7 @@ public class SpotRepository {
                 nextId(),
                 "But First, Coffee",
                 "Alangilan, Batangas City",
-                62, 36,
+                121.0682, 13.7826,
                 new int[]{
                     9, 21
                 },
@@ -115,7 +153,7 @@ public class SpotRepository {
                 nextId(),
                 "BSU Student Area",
                 "BatStateU Alangilan Campus, Golden Country Home",
-                36, 28,
+                121.0738, 13.7846,
                 new int[]{
                     7, 19
                 },
@@ -140,7 +178,7 @@ public class SpotRepository {
                 nextId(),
                 "BSU Library",
                 "2/F College of Engineering Building, BatStateU-Alangilan, Golden Country Homes",
-                44, 20,
+                121.0735, 13.7850,
                 new int[]{
                     7, 19
                 },
@@ -165,7 +203,7 @@ public class SpotRepository {
                 nextId(),
                 "Batangas City Public Library and Information Center",
                 "City Library Building, City Hall Complex, P. Burgos Street, Batangas City",
-                18, 54,
+                121.0583, 13.7565,
                 new int[]{
                     8, 17
                 },
