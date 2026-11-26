@@ -435,31 +435,45 @@ Opening http://localhost:8080...
 
 ---
 
-#### 3. 🗺️ Spot Registry & Interactive Leaflet Map (`spots.html`)
+#### 3. 🧭 Preference-Based Spot Recommender (`reco.html`)
+*Ticking study preferences (quiet environment, Wi-Fi, power outlets, air-conditioning, budget) to rank the best matching spots in real time.*
+
+<img src="screenshots/03-spot-recommender.png" alt="QuietSpot Preference Recommender" width="100%" />
+
+---
+
+#### 4. 🗺️ Spot Registry & Interactive Leaflet Map (`spots.html`)
 *Multi-criteria filtering by noise, crowd, price, and facilities paired with an interactive OpenStreetMap pin view.*
 
-<img src="screenshots/03-spots-map.png" alt="QuietSpot Registry and Leaflet Map" width="100%" />
+<img src="screenshots/04-spots-map.png" alt="QuietSpot Registry and Leaflet Map" width="100%" />
 
 ---
 
-#### 4. 💬 Community Feed, Spot Details & Live Status Reporting (`feed.html`)
+#### 5. ➕ Add New Study Spot Modal (`#dlgAdd`)
+*Recommending a new study location with category selection, operating hours, facilities, custom map coordinates, and photo upload.*
+
+<img src="screenshots/05-add-spot-modal.png" alt="QuietSpot Add New Study Spot Form" width="100%" />
+
+---
+
+#### 6. 💬 Community Feed, Spot Details & Live Status Reporting (`feed.html`)
 *Real-time noise/crowd status updates, 1–5 star ratings, photo gallery lightbox, and community upvote/downvote verification.*
 
-<img src="screenshots/04-feed-and-report.png" alt="QuietSpot Feed and Live Status Reporting" width="100%" />
+<img src="screenshots/06-feed-and-report.png" alt="QuietSpot Feed and Live Status Reporting" width="100%" />
 
 ---
 
-#### 5. 📊 Dashboard Analytics, Busy-Hours Heatmap & Gamification (`dashboard.html` & `account.html`)
+#### 7. 📊 Dashboard Analytics, Busy-Hours Heatmap & Gamification (`dashboard.html` & `account.html`)
 *Campus-wide 8:00 AM–8:00 PM busy-hours heatmap, circular level progress ring, daily streaks, weekly leaderboard, and 8-badge trophy shelf.*
 
-<img src="screenshots/05-dashboard-gamification.png" alt="QuietSpot Dashboard and Gamification" width="100%" />
+<img src="screenshots/07-dashboard-gamification.png" alt="QuietSpot Dashboard and Gamification" width="100%" />
 
 ---
 
-#### 6. 🔐 Authentication & Validation Test Cases (`login.html`, `signup.html`, `setup-profile.html`)
+#### 8. 🔐 Authentication & Validation Test Cases (`login.html`, `signup.html`, `setup-profile.html`)
 *4-step profile setup wizard with live preview and graceful `InvalidInputException` error handling.*
 
-<img src="screenshots/06-auth-validation.png" alt="QuietSpot Authentication and Validation" width="100%" />
+<img src="screenshots/08-auth-validation.png" alt="QuietSpot Authentication and Validation" width="100%" />
 
 ---
 
@@ -468,7 +482,7 @@ Opening http://localhost:8080...
 
 ### Known Limitations
 - Only spots in Alangilan, Batangas City that are added or registered in the system are covered.
-- Crowd and noise levels rely on crowdsourced user updates and may not always be accurate.
+- Crowd and noise levels depend on crowdsourced user updates and may not always be accurate.
 - No hardware sensors or cameras, no automated Wi-Fi speed testing, and no online payments or seat booking.
 - Rewards are limited to digital points, levels, streaks, and badges only.
 
