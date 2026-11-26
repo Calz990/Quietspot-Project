@@ -1,4 +1,0 @@
-# GitHub language statistics: count only the Java code in the project.
-# The web/ folder (HTML, CSS, JavaScript front end) is still part of the project;
-# this just keeps it out of the language bar so the repository shows as Java.
-web/** linguist-vendored
