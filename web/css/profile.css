@@ -1,9 +1,9 @@
 /*
-=====================================================
+================================================================================
 profile.css: Styles for the profile setup page (setup-profile.html)
 and the profile part of the Account page (account.html). Uses the same color
 variables as style.css, so every palette and Light/Dark works.
-=====================================================
+================================================================================
 */
 
 .pfwrap { max-width: 1100px; }

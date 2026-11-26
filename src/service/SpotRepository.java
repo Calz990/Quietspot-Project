@@ -1,14 +1,13 @@
 package service;
 
 import model.*;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
 public class SpotRepository {
     private final List<SpotArea> spots = new ArrayList<>();
     private int nextId = 1;
-    private final SpotStore store = new SpotStore(Paths.get("data", "spots.tsv"));
+    private final SpotStorage store = Storage.spots();   // MySQL, or data/spots.tsv when no database is set up
 
     public int nextId() {
         return nextId++;
@@ -26,7 +25,7 @@ public class SpotRepository {
         for (SpotArea s : store.load()) addSpot(s);
     }
 
-    // Writes the student-added spots to data/spots.tsv. Call after adding or deleting one.
+    // Saves the student-added spots (MySQL, or data/spots.tsv). Call after adding or deleting one.
     public void saveUserSpots() {
         store.save(spots);
     }

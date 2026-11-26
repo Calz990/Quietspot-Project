@@ -1,7 +1,7 @@
 // QuietSpot: profile.js
 // Sections: helpers, shared form fields, photo picking, header, setup wizard,
 // profile part of the Account page, edit profile dialog, start-up
-//
+
 // Loaded AFTER script.js on setup-profile.html and account.html, so it can use
 // the helpers from script.js ($, esc, user, loggedIn, go, toast, icon, levelOf, byId...).
 // The Java server keeps the profile (see model/UserProfile.java).
@@ -68,8 +68,9 @@ function pfSyncUser(p) {
 }
 
 // =====================================================
-// shared form fields: used by the setup wizard (prefix "su")
-// and by the Edit profile dialog (prefix "ep")
+// shared form fields: used by the setup wizard 
+// (prefix "su") and by the Edit profile dialog 
+// (prefix "ep")
 // =====================================================
 
 function pfAboutFields(p, pre) {
@@ -119,7 +120,8 @@ document.addEventListener('input', e => {
 });
 
 // =====================================================
-// photo picking: choose a picture, crop it square, shrink it
+// photo picking: choose a picture, crop it square, 
+// shrink it
 // =====================================================
 
 function pfCrop(file) {
@@ -153,7 +155,8 @@ function pfChoose(onFile) {
 }
 
 // =====================================================
-// header: picture + name (used by the setup preview and the Account page)
+// header: picture + name (used by the setup preview 
+// and the Account page)
 // =====================================================
 
 const pfAvatarInner = p => p.avatar ? `<img src="${esc(p.avatar)}" alt="">` : esc(pfInitials(pfName(p)));
@@ -173,9 +176,10 @@ function pfHeader(p, o = {}) {
 }
 
 // =====================================================
-// setup wizard (setup-profile.html): shown right after sign up
-// Step 1 profile picture, 2 about you, 3 study preferences, 4 review.
-// Every step is saved to the server when you press Next.
+// setup wizard (setup-profile.html): shown right after 
+// sign up Step 1 profile picture, 2 about you, 3 study 
+// preferences, 4 review. Every step is saved to the 
+// server when you press Next.
 // =====================================================
 
 const SU = { step: 0, photos: {}, busy: false };   // photos = the picture chosen but not saved yet
@@ -299,7 +303,7 @@ function pfRender() {
     const tags = (list, cls) => list.length ? `<div class="pftags">${list.map(t => `<span class="pftag ${cls}">${esc(t)}</span>`).join('')}</div>` : '';
     const details = pfDetails(p);
     $('pfSide').innerHTML = `
-      <section class="card pfcard"><h3Personal details</h3>${p.bio ? `<p style="margin:0 0 12px;overflow-wrap:anywhere">${esc(p.bio)}</p>` : ''}
+      <section class="card pfcard"><h3>Personal details</h3>${p.bio ? `<p style="margin:0 0 12px;overflow-wrap:anywhere">${esc(p.bio)}</p>` : ''}
         <ul class="pfdet">${details}</ul>
         ${p.bio || p.school || p.course || p.yearLevel || p.location || p.birthday ? '' : '<p class="meta" style="margin:10px 0 0">No details yet. Use Edit profile to add some.</p>'}</section>
       <section class="card pfcard"><h3>Study preferences</h3>${p.studyPrefs.length ? tags(p.studyPrefs.map(pfPrefLabel), 'pref') : '<p class="meta" style="margin:0">None picked yet.</p>'}</section>

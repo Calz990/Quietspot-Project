@@ -16,13 +16,13 @@ public class Main {
     private static final SpotRepository repo = new SpotRepository();
     private static final AuthService auth = new AuthService();
     private static final ReportService reports = new ReportService(repo);
+    private static final SocialStore social = Storage.social();   // null when there is no MySQL database
+    private static final GameStore game = Storage.game();         // points history, streaks, leaderboard, badges (MySQL)
     private static final Map<String, UserAccount> activeUsers = new HashMap<>();
 
     public static void main(String[] args) throws Exception {
-        // 1. I-load ang default spots at sample account sa Java backend
         repo.loadDefaultSpots();
-        repo.loadUserSpots();   // spots students added earlier (data/spots.tsv)
-        // The demo account is created only the first time; after that it is loaded from data/users.tsv with everything else.
+        repo.loadUserSpots();
         try {
             if (!auth.exists("Charisse")) {
                 UserAccount demo = auth.register("Charisse", "secret123", UserType.STUDENT);
@@ -34,7 +34,7 @@ public class Main {
 
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
 
-        // 2. Serve HTML, CSS, JS, and Images mula sa 'web' folder
+        // 2. Serve HTML, CSS, JS, and Images from 'web' folder
         server.createContext("/", exchange -> {
             String path = exchange.getRequestURI().getPath();
             if (path.equals("/"))
@@ -54,7 +54,7 @@ public class Main {
             }
         });
 
-        // 3. API: LOGIN (gamit ang AuthService.java)
+        // 3. API: LOGIN (AuthService.java)
         server.createContext("/api/login", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
                 return;
@@ -68,7 +68,7 @@ public class Main {
             }
         });
 
-        // 4. API: SIGNUP (gamit ang AuthService.java)
+        // 4. API: SIGNUP (AuthService.java)
         server.createContext("/api/signup", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
                 return;
@@ -90,7 +90,7 @@ public class Main {
             }
         });
 
-        // API: GET PROFILE (everything shown on the profile page and the setup pages)
+        // 5. API: GET PROFILE (everything shown on the profile page and the setup pages)
         server.createContext("/api/profile/get", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
                 sendJson(exchange, 405, "{\"ok\":false,\"error\":\"Use POST\"}");
@@ -105,7 +105,7 @@ public class Main {
             }
         });
 
-        // API: SAVE PROFILE (profile setup after sign up + Edit profile). Only the sent fields are changed.
+        // 6. API: SAVE PROFILE (profile setup after sign up + Edit profile). Only the sent fields are changed.
         server.createContext("/api/profile/save", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
                 sendJson(exchange, 405, "{\"ok\":false,\"error\":\"Use POST\"}");
@@ -120,7 +120,7 @@ public class Main {
             }
         });
 
-        // API: ACCOUNT DETAILS (email + member since)
+        // 7. API: ACCOUNT DETAILS (email + member since)
         server.createContext("/api/account/details", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
                 return;
@@ -135,7 +135,7 @@ public class Main {
             }
         });
 
-        // API: FORGOT PASSWORD (username + email must match, then set a new password)
+        // 8. API: FORGOT PASSWORD (username + email must match, then set a new password)
         server.createContext("/api/forgot-password", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
                 return;
@@ -148,20 +148,35 @@ public class Main {
             }
         });
 
-        // API: UPDATE PROFILE (username + user type)
+        // 9. API: UPDATE PROFILE (username + user type)
         server.createContext("/api/account/update", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
                 return;
             Map<String, String> d = parseForm(readBody(exchange));
             try {
                 String oldName = d.get("username");
+                String oldCanonical = auth.getUser(oldName).getUserName();
                 UserAccount u = auth.changeUserName(oldName, d.get("newUsername"));
                 try {
                     u.setUserType(UserType.valueOf(d.get("userType").toUpperCase()));
                 } catch (Exception ignored) {
                 }
                 auth.save();
-                repo.renameOwner(oldName.trim(), u.getUserName());   // their spots keep belonging to them
+                repo.renameOwner(oldName.trim(), u.getUserName());          // their spots keep belonging to them
+                if (social != null) {
+                    try {
+                        social.renameUser(oldCanonical, u.getUserName());   // and so do their reports, comments, votes, ratings, photos
+                    } catch (java.sql.SQLException e) {
+                        System.err.println("Could not move the data of " + oldCanonical + " to the new username: " + e.getMessage());
+                    }
+                }
+                if (game != null) {
+                    try {
+                        game.renameUser(oldCanonical, u.getUserName());     // and their points history and badges
+                    } catch (java.sql.SQLException e) {
+                        System.err.println("Could not move the points history of " + oldCanonical + ": " + e.getMessage());
+                    }
+                }
                 activeUsers.remove(oldName.trim().toLowerCase());
                 activeUsers.put(u.getUserName().toLowerCase(), u);
                 sendJson(exchange, 200, String.format("{\"ok\":true,\"userName\":\"%s\",\"userType\":\"%s\"}",
@@ -171,7 +186,7 @@ public class Main {
             }
         });
 
-        // API: CHANGE PASSWORD
+        // 10. API: CHANGE PASSWORD
         server.createContext("/api/account/password", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
                 return;
@@ -184,14 +199,29 @@ public class Main {
             }
         });
 
-        // API: DELETE ACCOUNT
+        // 11. API: DELETE ACCOUNT
         server.createContext("/api/account/delete", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
                 return;
             Map<String, String> d = parseForm(readBody(exchange));
             try {
+                String canonical = auth.getUser(d.get("username")).getUserName();
                 auth.deleteAccount(d.get("username"), d.get("password"));
-                repo.removeByOwner(d.get("username").trim());   // their spots go with the account
+                repo.removeByOwner(d.get("username").trim());           // their spots go with the account
+                if (social != null) {
+                    try {
+                        social.deleteUserData(canonical);               // so do their reports, comments, votes, ratings and photos
+                    } catch (java.sql.SQLException e) {
+                        System.err.println("Could not remove the data of " + canonical + ": " + e.getMessage());
+                    }
+                }
+                if (game != null) {
+                    try {
+                        game.deleteUserData(canonical);                 // and their points history and badges
+                    } catch (java.sql.SQLException e) {
+                        System.err.println("Could not remove the points history of " + canonical + ": " + e.getMessage());
+                    }
+                }
                 activeUsers.remove(d.get("username").trim().toLowerCase());
                 sendJson(exchange, 200, "{\"ok\":true}");
             } catch (InvalidInputException e) {
@@ -200,7 +230,7 @@ public class Main {
         });
 
         // for map pins, x = longitude and y = latitude (decimal degrees).
-        // 5. API: GET ALL SPOTS (gamit ang SpotRepository.java)
+        // 12. API: GET ALL SPOTS (gamit ang SpotRepository.java)
         server.createContext("/api/spots", exchange -> {
             StringBuilder sb = new StringBuilder("[");
             var list = repo.getAll();
@@ -224,31 +254,33 @@ public class Main {
             sendJson(exchange, 200, sb.toString());
         });
 
-        // 6. API: SUBMIT REPORT (gamit ang ReportService.java)
+        // 13. API: SUBMIT REPORT (gamit ang ReportService.java)
         server.createContext("/api/report", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
                 return;
             Map<String, String> data = parseForm(readBody(exchange));
             try {
+                SocialStore ss = needSocial();
                 String uname = data.getOrDefault("username", "guest").toLowerCase();
                 UserAccount u = auth.lookup(uname);   // a real account when there is one (its points and report count are saved)
                 if (u == null)
-                    u = activeUsers.computeIfAbsent(uname,
-                            k -> new UserAccount(data.getOrDefault("username", "Guest"), "default123"));
+                    throw new InvalidInputException("Please log in to report a status.");
                 int spotId = Integer.parseInt(data.get("spotId"));
                 NoiseLevel noise = NoiseLevel.values()[Integer.parseInt(data.get("noise")) - 1];
                 CrowdLevel crowd = CrowdLevel.values()[Integer.parseInt(data.get("crowd")) - 1];
                 String note = data.getOrDefault("note", "");
 
                 reports.submitReport(u, spotId, noise, crowd, note);
+                long[] saved = ss.addReport(spotId, u.getUserName(), noise.ordinal() + 1, crowd.ordinal() + 1, note);
+                if (game != null) game.log(u.getUserName(), GameStore.REPORT, "report");   // submitReport already added the points
                 auth.save();
-                sendJson(exchange, 200, "{\"ok\":true,\"points\":" + u.getPoints() + "}");
+                sendJson(exchange, 200, "{\"ok\":true,\"points\":" + u.getPoints() + ",\"id\":" + saved[0] + ",\"ts\":" + saved[1] + "}");
             } catch (Exception e) {
                 sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
             }
         });
 
-        // 7. API: ADD NEW SPOT (gamit ang SpotRepository at Subclasses: Cafe, Library, tudyRoom, CoworkingSpace)
+        // 14. API: ADD NEW SPOT (gamit ang SpotRepository at Subclasses: Cafe, Library, tudyRoom, CoworkingSpace)
         server.createContext("/api/add-spot", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod()))
                 return;
@@ -294,6 +326,7 @@ public class Main {
                 repo.addSpot(newSpot);
                 repo.saveUserSpots();
                 owner.incrementSpotsAdded();
+                award(owner, GameStore.SPOT, "spot");
                 auth.save();
                 sendJson(exchange, 200, "{\"ok\":true,\"id\":" + id + ",\"kind\":\"" + esc(newSpot.getKind()) + "\"}");
             } catch (Exception e) {
@@ -301,7 +334,7 @@ public class Main {
             }
         });
 
-        // API: DELETE A SPOT. Allowed for the student who added it, or a faculty/staff account. Built-in spots stay.
+        // 15. API: DELETE A SPOT. Allowed for the student who added it, or a faculty/staff account. Built-in spots stay.
         server.createContext("/api/delete-spot", exchange -> {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
                 sendJson(exchange, 405, "{\"ok\":false,\"error\":\"Method not allowed.\"}");
@@ -327,22 +360,249 @@ public class Main {
                     throw new InvalidInputException("Only the student who added this spot, or a faculty/staff account, can delete it.");
                 repo.removeById(id);
                 repo.saveUserSpots();
+                if (social != null) {
+                    try {
+                        social.deleteSpotData(id);   // its reports, comments, ratings and photos go with it
+                    } catch (java.sql.SQLException e) {
+                        System.err.println("Could not remove the data of deleted spot " + id + ": " + e.getMessage());
+                    }
+                }
                 sendJson(exchange, 200, "{\"ok\":true}");
             } catch (InvalidInputException e) {
                 sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
             }
         });
 
+// =========================================================================================================
+// What students share (reports, comments, votes, ratings, photos, favorites) lives in MySQL,
+// so every account sees the same data. All of these need a logged-in username, like the endpoints above.
+// =========================================================================================================
+
+        // Everything in one go: all reports, comments, photo list, ratings, and this student's favorites.
+        api(server, "/api/social", d -> {
+            String me = d.getOrDefault("username", "").trim();
+            UserAccount u = me.isEmpty() ? null : auth.lookup(me);
+            java.util.Set<Integer> favs = u == null ? java.util.Set.of() : new java.util.TreeSet<>(u.getFavoriteSpots());
+            return needSocial().snapshotJson(u == null ? "" : u.getUserName(), favs);
+        });
+
+        // Progress for the header chip and the dashboard: points, streak, this week's points, badges, leaderboard.
+        api(server, "/api/game", d -> {
+            UserAccount u = requireUser(d, "see your progress");
+            if (game == null)
+                throw new InvalidInputException("Points history and the leaderboard need the MySQL database (see docs/DATABASE_SETUP.md).");
+            return game.stateJson(u);
+        });
+
+        api(server, "/api/report-vote", d -> {
+            UserAccount u = requireUser(d, "vote");
+            int[] r = needSocial().voteReport(intOf(d, "reportId"), u.getUserName(), intOf(d, "dir"));
+            return "{\"ok\":true,\"up\":" + r[0] + ",\"down\":" + r[1] + ",\"myVote\":" + r[2] + ",\"removed\":" + (r[3] == 1) + "}";
+        });
+
+        api(server, "/api/comment-add", d -> {
+            UserAccount u = requireUser(d, "comment");
+            int spotId = intOf(d, "spotId");
+            if (repo.findById(spotId) == null) throw new InvalidInputException("That study spot no longer exists.");
+            long[] r = needSocial().addComment(spotId, u.getUserName(), d.get("text"));
+            award(u, GameStore.COMMENT, "comment");
+            auth.save();
+            return "{\"ok\":true,\"id\":" + r[0] + ",\"ts\":" + r[1] + ",\"points\":" + u.getPoints() + "}";
+        });
+
+        api(server, "/api/comment-delete", d -> {
+            UserAccount u = requireUser(d, "delete a comment");
+            needSocial().deleteComment(intOf(d, "commentId"), u.getUserName());
+            return "{\"ok\":true}";
+        });
+
+        api(server, "/api/comment-vote", d -> {
+            UserAccount u = requireUser(d, "vote");
+            int[] r = needSocial().voteComment(intOf(d, "commentId"), u.getUserName(), intOf(d, "dir"));
+            return "{\"ok\":true,\"up\":" + r[0] + ",\"down\":" + r[1] + ",\"myVote\":" + r[2] + "}";
+        });
+
+        api(server, "/api/rate", d -> {
+            UserAccount u = requireUser(d, "rate a spot");
+            int spotId = intOf(d, "spotId");
+            if (repo.findById(spotId) == null) throw new InvalidInputException("That study spot no longer exists.");
+            int[] r = needSocial().rate(spotId, u.getUserName(), intOf(d, "stars"));
+            if (r[0] == 1) {
+                award(u, GameStore.RATING, "rating");
+                auth.save();
+            }
+            return "{\"ok\":true,\"firstTime\":" + (r[0] == 1) + ",\"sum\":" + r[1] + ",\"count\":" + r[2] + "}";
+        });
+
+        api(server, "/api/photo-add", d -> {
+            UserAccount u = requireUser(d, "add a photo");
+            int spotId = intOf(d, "spotId");
+            if (repo.findById(spotId) == null) throw new InvalidInputException("That study spot no longer exists.");
+            long[] r = needSocial().addPhoto(spotId, u.getUserName(), d.get("caption"), d.get("src"));
+            u.incrementPhotosAdded();
+            award(u, GameStore.PHOTO, "photo");
+            auth.save();
+            return "{\"ok\":true,\"id\":" + r[0] + ",\"ts\":" + r[1] + "}";
+        });
+
+        api(server, "/api/photo-delete", d -> {
+            UserAccount u = requireUser(d, "remove a photo");
+            needSocial().deletePhoto(intOf(d, "photoId"), u.getUserName());
+            return "{\"ok\":true}";
+        });
+
+        // The picture itself (the pages use it as <img src="/api/photo?id=7">).
+        server.createContext("/api/photo", exchange -> {
+            try {
+                String q = exchange.getRequestURI().getQuery();
+                int id = Integer.parseInt(q.replaceAll(".*(^|&)id=(\\d+).*", "$2"));
+                SocialStore.PhotoData p = needSocial().photo(id);
+                if (p == null) {
+                    sendJson(exchange, 404, "{\"error\":\"Photo not found\"}");
+                    return;
+                }
+                exchange.getResponseHeaders().set("Content-Type", p.mime());
+                exchange.getResponseHeaders().set("Cache-Control", "public, max-age=86400");
+                exchange.sendResponseHeaders(200, p.bytes().length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(p.bytes());
+                }
+            } catch (Exception e) {
+                sendJson(exchange, 404, "{\"error\":\"Photo not found\"}");
+            }
+        });
+
+        // A student's profile picture (the pages use it as <img src="/api/avatar?u=username">).
+        // Answers 404 when the student has no picture, so the page falls back to the first letter of the name.
+        server.createContext("/api/avatar", exchange -> {
+            try {
+                String q = exchange.getRequestURI().getRawQuery();
+                String name = java.net.URLDecoder.decode(q.replaceAll(".*(^|&)u=([^&]*).*", "$2"), StandardCharsets.UTF_8);
+                UserAccount u = auth.lookup(name);
+                String av = u == null ? "" : u.getProfile().getAvatar();
+                int comma = av.indexOf(',');
+                int semi = av.indexOf(';');
+                if (!av.startsWith("data:image/") || comma < 0 || semi < 0 || semi > comma) {
+                    sendJson(exchange, 404, "{\"error\":\"No profile picture\"}");
+                    return;
+                }
+                String etag = "\"" + Integer.toHexString(av.hashCode()) + "\"";     // changes when the picture changes
+                exchange.getResponseHeaders().set("ETag", etag);
+                exchange.getResponseHeaders().set("Cache-Control", "no-cache");     // the browser re-checks, so a new picture shows up
+                if (etag.equals(exchange.getRequestHeaders().getFirst("If-None-Match"))) {
+                    exchange.sendResponseHeaders(304, -1);
+                    return;
+                }
+                byte[] bytes = java.util.Base64.getMimeDecoder().decode(av.substring(comma + 1));
+                exchange.getResponseHeaders().set("Content-Type", av.substring(5, semi));
+                exchange.sendResponseHeaders(200, bytes.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(bytes);
+                }
+            } catch (Exception e) {
+                sendJson(exchange, 404, "{\"error\":\"No profile picture\"}");
+            }
+        });
+
+        // What other students may see on someone's profile popup. No email and no birthday on purpose.
+        api(server, "/api/profile/public", d -> {
+            requireUser(d, "view profiles");
+            UserAccount t = auth.lookup(d.get("target"));
+            if (t == null) throw new InvalidInputException("That account no longer exists.");
+            UserProfile p = t.getProfile();
+            StringBuilder sb = new StringBuilder("{\"ok\":true");
+            sb.append(",\"userName\":\"").append(esc(t.getUserName())).append('"');
+            sb.append(",\"userType\":\"").append(t.getUserType().name()).append('"');
+            sb.append(",\"memberSince\":\"").append(esc(t.getCreatedAt())).append('"');
+            sb.append(",\"fullName\":\"").append(esc(p.getFullName())).append('"');
+            sb.append(",\"bio\":\"").append(esc(p.getBio())).append('"');
+            sb.append(",\"school\":\"").append(esc(p.getSchool())).append('"');
+            sb.append(",\"course\":\"").append(esc(p.getCourse())).append('"');
+            sb.append(",\"yearLevel\":\"").append(esc(p.getYearLevel())).append('"');
+            sb.append(",\"location\":\"").append(esc(p.getLocation())).append('"');
+            sb.append(",\"interests\":").append(jsonArray(p.getInterests()));
+            sb.append(",\"studyPrefs\":").append(jsonArray(p.getStudyPrefs()));
+            sb.append(",\"hasAvatar\":").append(!p.getAvatar().isEmpty());
+            sb.append(",\"points\":").append(t.getPoints());
+            sb.append(",\"reportsMade\":").append(t.getReportsMade());
+            sb.append(",\"spotsAdded\":").append(t.getSpotsAdded());
+            sb.append(",\"photosAdded\":").append(t.getPhotosAdded());
+            return sb.append('}').toString();
+        });
+
+        api(server, "/api/favorite", d -> {
+            UserAccount u = requireUser(d, "save favorites");
+            int spotId = intOf(d, "spotId");
+            if (Boolean.parseBoolean(d.get("on"))) {
+                if (repo.findById(spotId) == null) throw new InvalidInputException("That study spot no longer exists.");
+                u.getFavoriteSpots().add(spotId);
+            } else {
+                u.getFavoriteSpots().remove(spotId);
+            }
+            auth.save();
+            return "{\"ok\":true}";
+        });
+
         server.start();
         String url = "http://localhost:8080";
         System.out.println("=========================================");
         System.out.println("QuietSpot Java Server is running!");
+        if (social == null)
+            System.out.println("NOTE: no MySQL database is set up, so reports, comments, ratings, photos, streaks and the leaderboard are switched off (see docs/DATABASE_SETUP.md).");
         System.out.println("Opening " + url + "...");
         System.out.println("=========================================");
         openBrowser(url);
     }
 
-    // --- Helper Methods ---
+    // Helper Methods
+    private interface Api {
+        String run(Map<String, String> data) throws Exception;
+    }
+
+    // A POST endpoint that answers with the JSON the handler returns, or {"ok":false,"error":...} when it throws.
+    private static void api(HttpServer server, String path, Api handler) {
+        server.createContext(path, exchange -> {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"ok\":false,\"error\":\"Use POST\"}");
+                return;
+            }
+            try {
+                sendJson(exchange, 200, handler.run(parseForm(readBody(exchange))));
+            } catch (InvalidInputException e) {
+                sendJson(exchange, 400, "{\"ok\":false,\"error\":\"" + esc(e.getMessage()) + "\"}");
+            } catch (Exception e) {
+                e.printStackTrace();
+                sendJson(exchange, 500, "{\"ok\":false,\"error\":\"" + esc("Server error: " + e.getMessage()) + "\"}");
+            }
+        });
+    }
+
+    // Adds points to the account and records them in the points history (streaks and the weekly board come from it).
+    private static void award(UserAccount u, int points, String reason) throws java.sql.SQLException {
+        u.addPoints(points);
+        if (game != null) game.log(u.getUserName(), points, reason);
+    }
+
+    private static SocialStore needSocial() throws InvalidInputException {
+        if (social == null)
+            throw new InvalidInputException("Reports, comments, ratings and photos need the MySQL database (see docs/DATABASE_SETUP.md).");
+        return social;
+    }
+
+    private static UserAccount requireUser(Map<String, String> d, String action) throws InvalidInputException {
+        UserAccount u = auth.lookup(d.get("username"));
+        if (u == null) throw new InvalidInputException("Please log in to " + action + ".");
+        return u;
+    }
+
+    private static int intOf(Map<String, String> d, String key) throws InvalidInputException {
+        try {
+            return Integer.parseInt(String.valueOf(d.get(key)).trim());
+        } catch (NumberFormatException e) {
+            throw new InvalidInputException("Invalid request.");
+        }
+    }
+
     // Response for login and sign up. setupDone tells the page if the profile setup was already finished.
     private static String authJson(UserAccount u) {
         return String.format(

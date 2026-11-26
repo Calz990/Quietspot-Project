@@ -249,6 +249,8 @@ async function loadSpotsFromJava() {
             }
         });
 
+        spots.forEach(s => { s.baseNoise = s.noise; s.baseCrowd = s.crowd; s.baseTs = s.updatedAt; });   // what a spot shows while it has no reports
+
         const photoMap = {
             "Libro Espresso": "images/libroespresso.jpg",
             "But First, Coffee": "images/butfirstcoffee.jpg",
@@ -261,7 +263,7 @@ async function loadSpotsFromJava() {
             const src = photoMap[s.name];
             if (src) {
                 s.photos = [new Photo({
-                    id: pid++,
+                    id: -(pid++),   // built-in pictures use negative ids; photos students add use their database id
                     src: src,
                     caption: s.name,
                     user: 'QuietSpot',
@@ -276,6 +278,80 @@ async function loadSpotsFromJava() {
     } catch (err) {
         console.error('Could not load spots from Java:', err);
         toast('Cannot connect to Java server. Make sure Main.java is running.');
+        return false;
+    }
+}
+
+// =====================================================
+// shared.js: Reports, comments, votes, ratings, photos 
+// and favorites live in MySQL (the Java server), so 
+// every account sees the same ones. This file only 
+// shows them and sends changes.
+// =====================================================
+
+// POST to the Java server as the logged-in student. Resolves with the JSON, rejects with a readable message.
+async function qsApi(path, fields = {}) {
+    const res = await fetch(path, { method: 'POST', body: new URLSearchParams({ username: user.userName, ...fields }) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Something went wrong.');
+    return data;
+}
+const failMsg = err => (err instanceof TypeError ? NO_SERVER : err.message);
+
+// A spot shows the average of its reports; with no reports it shows what it was added with.
+function recalcStatus(s) {
+    if (!s.reports.length) {
+        s.noise = s.baseNoise ?? s.noise;
+        s.crowd = s.baseCrowd ?? s.crowd;
+        s.updatedAt = s.baseTs ?? s.updatedAt;
+        return;
+    }
+    const n = s.reports.length;
+    s.noise = Math.round(s.reports.reduce((t, r) => t + r.noise, 0) / n);
+    s.crowd = Math.round(s.reports.reduce((t, r) => t + r.crowd, 0) / n);
+    s.updatedAt = Math.max(...s.reports.map(r => r.ts));
+}
+
+// Loads everything shared from the server (call after the spots are loaded, and again after login or sign up).
+async function loadSocial() {
+    try {
+        const res = await fetch('/api/social', { method: 'POST', body: new URLSearchParams({ username: loggedIn ? user.userName : '' }) });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Could not load shared data.');
+        const me = meKey(), mine = v => (v ? { [me]: v } : {});
+
+        const prev = { ...social };   // keep which comment boxes are open and any half-typed comment
+        Object.keys(social).forEach(k => delete social[k]);
+        spots.forEach(s => {
+            s.reports = [];
+            s.photos = s.photos.filter(p => p.id < 0);   // keep only the built-in pictures, the rest come from the server
+            const old = prev[s.id];
+            social[s.id] = { sum: 0, count: 0, rates: {}, open: old ? old.open : false, draft: old ? old.draft : '', comments: [], v2: true };
+        });
+        data.reports.forEach(o => {
+            const s = byId(o.spotId);
+            if (s) s.reports.push(new Report({ id: o.id, spotId: o.spotId, user: o.user, noise: o.noise, crowd: o.crowd, note: o.note, ts: o.ts, up: o.up, down: o.down, votes: mine(o.myVote) }));
+        });
+        data.photos.forEach(o => {   // newest first, in front of the built-in picture
+            const s = byId(o.spotId);
+            if (s) s.photos.splice(s.photos.filter(p => p.id > 0).length, 0, new Photo({ id: o.id, src: '/api/photo?id=' + o.id, caption: o.caption, user: o.user, ts: o.ts }));
+        });
+        data.ratings.forEach(o => {
+            const e = social[o.spotId];
+            if (!e) return;
+            e.sum = o.sum; e.count = o.count;
+            if (o.mine) e.rates[me] = o.mine;
+        });
+        data.comments.forEach(o => {
+            const e = social[o.spotId];
+            if (e) e.comments.push({ id: o.id, user: o.user, text: o.text, ts: o.ts, up: o.up, down: o.down, votes: mine(o.myVote) });
+        });
+        user.favoriteSpots = new Set(data.favorites.filter(id => byId(id)));
+        spots.forEach(recalcStatus);
+        return true;
+    } catch (err) {
+        console.error('Could not load shared data:', err);
+        toast(failMsg(err));
         return false;
     }
 }
@@ -298,15 +374,13 @@ function applyTheme(t) {
 $('themeBtn').addEventListener('click', () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
 applyTheme(document.documentElement.getAttribute('data-theme'));
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3000); }
-// Point values: the ONLY place they are defined. award() callers and the "How to earn points" list both read from here.
+// Point values shown in "How to earn points". The server decides the real amounts (GameStore.java): keep the two in step.
 const POINTS = { report: 5, spot: 25, photo: 5, rating: 2, comment: 3 };
 function award(n, why) {
-    user.points += n;
-    track(n);          // counts toward today's streak and this week's leaderboard
+    // The server already added the points when it saved the action. This shows the message and pulls the new
+    // totals, streak, weekly points and badges.
     toast(`+${n} points: ${why}`);
-    gameSync();        // unlock popups for new badges or levels
-    renderDash();
-    save();
+    return refreshGame(true);
 }
 function meter(lv, label, big) {
     let b = '';
@@ -483,8 +557,10 @@ on('locBtn', 'click', locateMe);
 // =====================================================
 // game.js: Levels, daily streaks, badge unlocks,
 // the weekly leaderboard, and the unlock popup.
-// Streaks and weekly points are kept per username in
-// this browser (localStorage key "qs-game-v1").
+// Points, streaks, weekly points, badges and the 
+// leaderboard come from the server (refreshGame). Only 
+// the "already celebrated" bookkeeping for the popups 
+// is kept in this browser (localStorage key "qs-game-v1").
 // =====================================================
 
 const GAME_KEY = 'qs-game-v1';
@@ -492,7 +568,6 @@ const LEVELS = [
     { n: 'Newcomer', min: 0 }, { n: 'Contributor', min: 30 }, { n: 'Trusted reporter', min: 50 },
     { n: 'Campus guide', min: 100 }, { n: 'Spot expert', min: 175 }, { n: 'QuietSpot legend', min: 300 }
 ];
-const RIVALS = ['Mika', 'Paolo', 'Jen', 'Ria', 'Ana', 'Rico'];   // sample students for the weekly board
 const STREAK_MARKS = [3, 7, 14, 30];
 const ICONS = {
     chat: '<path d="M4 5h16v11H9l-5 4z"/>',
@@ -522,44 +597,44 @@ function levelOf(pts) {
     return { idx, cur, next, toNext: next ? next.min - pts : 0, pct: next ? Math.round((pts - cur.min) / (next.min - cur.min) * 100) : 100 };
 }
 
-// saved progress (per username)
+// Progress of the logged-in student. Filled in by refreshGame() from the server.
 let game = null, gameFor = null;
 function G() {
-    if (gameFor !== user.userName) {
+    if (!game || gameFor !== user.userName) {
         gameFor = user.userName;
         let all = {};
         try { all = JSON.parse(localStorage.getItem(GAME_KEY)) || {}; } catch (e) { }
-        game = Object.assign({ last: '', streak: 0, best: 0, days: [], wk: '', wkPts: 0, log: null, lvl: null, seen: null, unlocked: [], fresh: [] }, all[gameFor] || {});
-        if (!game.log) game.log = game.wkPts > 0 ? [{ t: Date.now(), n: game.wkPts }] : [];                                         // older saves had only a weekly total
+        const mine = all[gameFor] || {};
+        game = { last: '', streak: 0, best: 0, days: [], wkPts: 0, board: [], unlocked: [], lvl: mine.lvl ?? null, seen: mine.seen ?? null, fresh: mine.fresh || [] };
     }
-    const wk = dayKey(weekStart());
-    game.wk = wk;
-    const since = weekStart().getTime();
-    game.log = game.log.filter(e => e.t >= since);                                                                                  // new week: older entries drop off, board resets
-    game.wkPts = game.log.reduce((t, e) => t + e.n, 0);                                                                             // weekly points = what was earned since Monday
-    if (game.last && game.last !== dayKey(new Date()) && game.last !== dayKey(addDays(new Date(), -1))) game.streak = 0;            // missed a day
     return game;
 }
-function gameSave() {
+function gameSave() {   // only the popup bookkeeping is kept in the browser
     let all = {};
     try { all = JSON.parse(localStorage.getItem(GAME_KEY)) || {}; } catch (e) { }
-    all[gameFor] = game;
+    all[gameFor] = { lvl: game.lvl, seen: game.seen, fresh: game.fresh };
     try { localStorage.setItem(GAME_KEY, JSON.stringify(all)); } catch (e) { }
 }
 
-// Call whenever the student does something that earns points.
-function track(gain) {
-    if (!loggedIn) return;
-    const g = G(), today = dayKey(new Date());
-    if (gain > 0) { g.log.push({ t: Date.now(), n: gain }); g.wkPts += gain; }
-    if (g.last !== today) {
-        g.streak = g.last === dayKey(addDays(new Date(), -1)) ? g.streak + 1 : 1;
-        g.last = today;
-        g.best = Math.max(g.best, g.streak);
-        g.days = [...g.days.filter(d => d !== today), today].slice(-21);
-        if (STREAK_MARKS.includes(g.streak)) queueCelebration({ kind: 'streak', title: `${g.streak}-day streak`, sub: 'Come back tomorrow to keep it going.', icon: 'flame' });
+// Loads this student's points, counts, streak, weekly points, badges and the weekly leaderboard from the server.
+// celebrate = true right after an action: a new streak milestone gets its popup (not when the page just opened).
+async function refreshGame(celebrate = false) {
+    if (!loggedIn) return false;
+    try {
+        const d = await qsApi('/api/game');
+        const g = G(), before = g.streak;
+        Object.assign(user, { points: d.points, reportsMade: d.reportsMade, spotsAdded: d.spotsAdded, photosAdded: d.photosAdded });
+        Object.assign(g, { last: d.last, streak: d.streak, best: d.best, days: d.days, wkPts: d.weekPoints, board: d.board, unlocked: d.unlocked });
+        if (celebrate && d.streak > before && STREAK_MARKS.includes(d.streak))
+            queueCelebration({ kind: 'streak', title: `${d.streak}-day streak`, sub: 'Come back tomorrow to keep it going.', icon: 'flame' });
+        gameSync();
+        renderDash();
+        save();
+        return true;
+    } catch (err) {
+        console.error('Could not load your progress:', err);
+        return false;
     }
-    gameSave();
 }
 
 // Looks for new badges and level-ups and celebrates them. Safe to call often.
@@ -586,16 +661,11 @@ function gameSync() {
     renderChip();
 }
 
-// weekly leaderboard 
-function rivalPts(name, wk) {
-    let h = 0;
-    for (const c of name + wk) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-    const now = new Date(), frac = ((now.getDay() + 6) % 7 + now.getHours() / 24) / 7;
-    return Math.round((10 + h % 50) * Math.min(1, frac + 0.1));   // sample students: a realistic 10-60 points a week
-}
+// Weekly leaderboard: the real students with the most points since Monday (from the server), plus you.
 function weeklyBoard() {
-    const wk = dayKey(weekStart());
-    const rows = [...RIVALS.map(n => ({ n, p: rivalPts(n, wk), me: false })), { n: user.userName, p: Math.min(G().wkPts, user.points), me: true }];
+    const me = user.userName.toLowerCase();
+    const rows = G().board.filter(r => String(r.name).toLowerCase() !== me).map(r => ({ n: r.name, p: r.points, me: false }));
+    rows.push({ n: user.userName, p: G().wkPts, me: true });
     rows.sort((a, b) => b.p - a.p || (a.me ? -1 : b.me ? 1 : a.n.localeCompare(b.n)));
     return rows.map((r, i) => ({ ...r, rank: i + 1 }));
 }
@@ -778,7 +848,7 @@ function renderRewards() {
       </div>
       <div>
         <h3 class="sec" style="margin-top:0">This week's leaderboard</h3>
-        <p class="meta" style="margin-bottom:10px">Points earned since Monday. ${left <= 1 ? 'Resets at midnight tonight' : `Resets Monday, in ${left} days`}. Other students are sample data.</p>
+        <p class="meta" style="margin-bottom:10px">Points earned since Monday. ${left <= 1 ? 'Resets at midnight tonight' : `Resets Monday, in ${left} days`}.</p>
         <ol class="wk">${shown.map(row).join('')}${me.rank > 5 ? `<li class="gap" aria-hidden="true">...</li>${row(me)}` : ''}</ol>
         <p class="meta" style="margin-top:8px">${above ? `${above.p - me.p + 1} ${above.p - me.p + 1 === 1 ? 'point' : 'points'} to pass ${esc(above.n)}.` : 'You lead the board this week.'} You earned ${me.p} this week; ${user.points} in total.</p>
       </div>
@@ -865,7 +935,7 @@ function renderTop() {
 }
 function detailReportHTML(r) {
     return `<div class="report"><div>
-      <p><strong>${esc(r.user)}${r.mine ? ' (you)' : ''}</strong> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span> <span class="meta">${ago(r.ts)}</span></p>
+      <p>${avHTML(r.user, 'sm')}<strong>${uLink(r.user)}${r.mine ? ' (you)' : ''}</strong> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span> <span class="meta">${ago(r.ts)}</span></p>
       <p class="meta">${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd${r.net() < 3 && r.net() > -1 ? `. Needs ${3 - r.net()} more ${3 - r.net() === 1 ? 'upvote' : 'upvotes'} to be verified` : ''}</p>${r.note ? `<p>${esc(r.note)}</p>` : ''}</div>
       <div class="votes" aria-label="Is this report accurate?">
         <button data-act="vote" data-id="${r.id}" data-dir="1" aria-pressed="${r.myVote === 1}" aria-label="Upvote, report is accurate">▲</button>
@@ -876,7 +946,7 @@ function detailReportHTML(r) {
 function detailCommentHTML(s, m, i) {
     const mine = isMe(m.user);
     return `<div class="report"><div>
-      <p><strong>${esc(m.user)}${mine ? ' (you)' : ''}</strong> <span class="tag ${cmNet(m) >= 3 ? 'solid' : ''}" style="margin-left:4px">${cmVerdict(m)}</span> <span class="meta">${ago(m.ts)}</span></p>
+      <p>${avHTML(m.user, 'sm')}<strong>${uLink(m.user)}${mine ? ' (you)' : ''}</strong> <span class="tag ${cmNet(m) >= 3 ? 'solid' : ''}" style="margin-left:4px">${cmVerdict(m)}</span> <span class="meta">${ago(m.ts)}</span></p>
       ${cmNeedsMsg(m) ? `<p class="meta">Comment. ${cmNeedsMsg(m)}</p>` : ''}<p>${esc(m.text)}</p>${mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}</div>
       <div class="votes" aria-label="Is this comment helpful?">
         <button data-act="cm-like" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === 1}" aria-label="Upvote, helpful">▲</button>
@@ -960,17 +1030,27 @@ async function uploadPhoto(file) {
     const s = byId(state.sel), err = $('phErr');
     try {
         const src = await loadImage(file);
-        s.addPhoto(new Photo({
-            id: pid++, user: user.userName, src, caption: $('ph-cap').value.trim(), ts: Date.now()
-        }));
+        const caption = $('ph-cap') ? $('ph-cap').value.trim() : '';
+        const data = await qsApi('/api/photo-add', { spotId: s.id, caption, src });
+        s.photos.unshift(new Photo({ id: data.id, user: user.userName, src: '/api/photo?id=' + data.id, caption, ts: data.ts }));
         user.photosAdded++;
         refreshAll();
         award(POINTS.photo, 'photo added');
     }
     catch (ex) {
-        err.textContent = ex.message;
-        $('ph-file').value = '';
+        if (err) err.textContent = failMsg(ex); else toast(failMsg(ex));
+        if ($('ph-file')) $('ph-file').value = '';
     }
+}
+async function removePhoto(id) {
+    const s = byId(state.sel);
+    if (!s) return;
+    try {
+        await qsApi('/api/photo-delete', { photoId: id });
+        s.removePhoto(id);
+        refreshAll();
+        toast('Photo removed');
+    } catch (err) { toast(failMsg(err)); }
 }
 function openPhoto(photoId) {
     const s = byId(state.sel), p = s.photos.find(x => x.id === photoId);
@@ -999,7 +1079,7 @@ function openReport(id) {
       <label class="f">Note (optional)<input type="text" id="r-note" maxlength="100" placeholder="e.g. Outlets near the window are free"></label>
     </div>
     <p class="err" id="repErr" role="alert"></p>
-    <div class="foot"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn solid">Send update (+10 points)</button></div>`;
+    <div class="foot"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn solid">Send update (+${POINTS.report} points)</button></div>`;
     $('dlgReport').showModal();
 }
 on('reportForm', 'submit', async e => {
@@ -1045,41 +1125,24 @@ on('reportForm', 'submit', async e => {
             return;
         }
 
-        // Add the new report first
+        // The server saved it (and gave it its id). Your own report starts with your upvote.
         const report = new Report({
-            id: rid++,
+            id: data.id,
             spotId: s.id,
             user: user.userName,
             noise, crowd, note,
-            ts: Date.now(),
+            ts: data.ts,
             up: 1, down: 0,
-            votes: { [meKey()]: 1 }   // your own report starts with your upvote
+            votes: { [meKey()]: 1 }
         });
         s.reports.unshift(report);
+        recalcStatus(s);
 
-        // Average all reports for this spot
-        if (s.reports.length > 0) {
-            let noiseSum = 0, crowdSum = 0;
-            s.reports.forEach(r => {
-                noiseSum += r.noise;
-                crowdSum += r.crowd;
-            });
-            const count = s.reports.length;
-            s.noise = Math.round(noiseSum / count);
-            s.crowd = Math.round(crowdSum / count);
-        }
-        s.updatedAt = Date.now();
-
-        // Points
-        user.reportsMade++;
-        const gain = POINTS.report;
-        user.points += gain;
-        track(gain);                                            // streak and weekly leaderboard
-
-        toast(`Report submitted! +${gain} points`);
+        // The server added the points; pull the new totals and streak.
+        toast(`Report submitted! +${POINTS.report} points`);
         $('dlgReport').close();
         refreshAll();
-        save();
+        refreshGame(true);
 
     } catch (err) {
         console.error(err);
@@ -1165,12 +1228,15 @@ on('addForm', 'submit', async e => {
             }
         });
 
-        // Attach the chosen photo (if any) to the new spot
+        // Save the chosen photo (if any) for the new spot
         if (addPhotoSrc) {
-            spot.addPhoto(new Photo({
-                id: pid++, user: user.userName, src: addPhotoSrc, caption: name, ts: Date.now()
-            }));
-            user.photosAdded++;
+            try {
+                const pr = await qsApi('/api/photo-add', { spotId: data.id, caption: name, src: addPhotoSrc });
+                spot.photos.unshift(new Photo({ id: pr.id, user: user.userName, src: '/api/photo?id=' + pr.id, caption: name, ts: pr.ts }));
+                user.photosAdded++;
+            } catch (pe) {
+                toast('The spot was added, but its photo could not be saved: ' + failMsg(pe));
+            }
         }
 
         spots.push(spot);
@@ -1190,31 +1256,26 @@ on('addForm', 'submit', async e => {
         err.textContent = ex.message;
     }
 });
-function vote(id, dir) {
+async function vote(id, dir) {
     let found = null;
     spots.forEach(s => s.reports.forEach(r => { if (r.id === id)
         found = { s, r }; }));
     if (!found)
         return;
     const { s, r } = found;
-    const cur = r.myVote;
-    if (cur === 1)
-        r.up--;
-    if (cur === -1)
-        r.down--;
-    const next = cur === dir ? 0 : dir;
-    if (next === 0) delete r.votes[meKey()]; else r.votes[meKey()] = next;
-    if (next === 1)
-        r.up++;
-    if (next === -1)
-        r.down++;
-    if (r.net() <= -3) {
-        s.reports = s.reports.filter(x => x !== r);
-        if (s.reports[0])
-            s.syncFrom(s.reports[0]);
-        toast('Report removed after community downvotes. Status restored to the previous report.');
-    }
-    refreshAll();
+    try {
+        const data = await qsApi('/api/report-vote', { reportId: id, dir });
+        if (data.removed) {
+            s.reports = s.reports.filter(x => x !== r);
+            recalcStatus(s);
+            toast('Report removed after community downvotes. Status restored.');
+        } else {
+            r.up = data.up;
+            r.down = data.down;
+            r.votes = data.myVote ? { [meKey()]: data.myVote } : {};
+        }
+        refreshAll();
+    } catch (err) { toast(failMsg(err)); }
 }
 function fillHours() {
     if (!$('a-open')) return;
@@ -1270,20 +1331,14 @@ document.addEventListener('click', e => {
         openSpot(id);
     if (act === 'report')
         openReport(id);
-    if (act === 'fav') {
-        const on = user.toggleFavorite(id);
-        toast(on ? 'Saved to favorites' : 'Removed from favorites');
-        refreshAll();
-    }
+    if (act === 'fav')
+        toggleFav(id);
     if (act === 'vote')
         vote(id, +el.dataset.dir);
     if (act === 'zoom')
         openPhoto(id);
-    if (act === 'delphoto') {
-        byId(state.sel).removePhoto(id);
-        refreshAll();
-        toast('Photo removed');
-    }
+    if (act === 'delphoto')
+        removePhoto(id);
     if (act === 'clear')
         clearFilters();
 });
@@ -1338,30 +1393,9 @@ document.addEventListener('change', e => {
 
 const social = {};
 const hsh = s => [...s.name].reduce((a, c) => a + c.charCodeAt(0), 0);
-function soc(s) {
-    if (!social[s.id]) {
-        const h = hsh(s), count = 18 + h % 60, avg = 3.8 + (h % 11) / 10;
-        // sum and count are the ratings from other students (sample numbers). rates holds each account's own rating.
-        social[s.id] = { sum: Math.round(avg * count), count, rates: {}, open: false, draft: '', comments: [], v2: true };
-    }
-    return socUpgrade(social[s.id]);
-}
-function socUpgrade(e) {
-    if (!e.v2) {   // data saved by the old version
-        // The sample comments are gone: the feed now shows this spot's real reports (same list as in Details).
-        // Only comments a student really typed (they had mine: true) are kept, under the name that wrote them.
-        e.comments = (e.comments || []).filter(m => m.mine).map(m => {
-            const o = { user: m.user, text: m.text, ts: m.ts, up: m.up || 0, down: m.down || 0, votes: {} };
-            const v = m.vote ?? (m.liked ? 1 : 0);
-            if (v && LEGACY_OWNER) o.votes[LEGACY_OWNER] = v;
-            return o;
-        });
-        e.rates = {};
-        if (e.mine && LEGACY_OWNER) e.rates[LEGACY_OWNER] = e.mine;
-        delete e.mine;
-        e.v2 = true;
-    }
-    return e;
+function soc(s) {   // this spot's ratings and comments (loaded from the server by loadSocial)
+    if (!social[s.id]) social[s.id] = { sum: 0, count: 0, rates: {}, open: false, draft: '', comments: [], v2: true };
+    return social[s.id];
 }
 const myRate = sc => (sc.rates || {})[meKey()] || 0;
 function spotArt(s) {
@@ -1390,27 +1424,153 @@ const cmMine = m => (m.votes || {})[meKey()] || 0;
 const cmNet = m => (m.up || 0) - (m.down || 0);
 const cmVerdict = m => cmNet(m) >= 3 ? 'Verified' : cmNet(m) <= -1 ? 'Disputed' : 'Comment';
 const cmNeedsMsg = m => cmNet(m) < 3 && cmNet(m) > -1 ? `Needs ${3 - cmNet(m)} more ${3 - cmNet(m) === 1 ? 'upvote' : 'upvotes'} to be verified` : '';
-function cmVote(m, dir) {
-    const cur = cmMine(m);
-    if (cur === 1) m.up = (m.up || 0) - 1;
-    if (cur === -1) m.down = (m.down || 0) - 1;
-    const next = cur === dir ? 0 : dir;
-    if (next === 1) m.up = (m.up || 0) + 1;
-    if (next === -1) m.down = (m.down || 0) + 1;
-    m.votes = m.votes || {};
-    if (next === 0) delete m.votes[meKey()]; else m.votes[meKey()] = next;
+async function voteComment(m, dir) {
+    try {
+        const data = await qsApi('/api/comment-vote', { commentId: m.id, dir });
+        m.up = data.up;
+        m.down = data.down;
+        m.votes = data.myVote ? { [meKey()]: data.myVote } : {};
+        refreshAll();
+    } catch (err) { toast(failMsg(err)); }
 }
+async function postComment(s) {
+    const sc = soc(s), txt = sc.draft.trim();
+    if (!txt) {
+        toast('Write a comment first.');
+        return;
+    }
+    try {
+        const data = await qsApi('/api/comment-add', { spotId: s.id, text: txt });
+        sc.comments.push({ id: data.id, user: user.userName, text: txt, ts: data.ts, up: 1, down: 0, votes: { [meKey()]: 1 } });   // starts with your upvote
+        sc.draft = '';
+        sc.open = true;
+        refreshAll();
+        award(POINTS.comment, 'feedback shared');
+    } catch (err) { toast(failMsg(err)); }
+}
+async function removeComment(s, m) {
+    try {
+        await qsApi('/api/comment-delete', { commentId: m.id });
+        const sc = soc(s);
+        sc.comments.splice(sc.comments.indexOf(m), 1);
+        refreshAll();
+        toast('Comment deleted');
+    } catch (err) { toast(failMsg(err)); }
+}
+async function rateSpot(s, n) {
+    try {
+        const data = await qsApi('/api/rate', { spotId: s.id, stars: n });
+        const sc = soc(s);
+        sc.sum = data.sum;
+        sc.count = data.count;
+        sc.rates[meKey()] = n;
+        if (data.firstTime) award(POINTS.rating, 'rating shared');
+        renderFeed();
+    } catch (err) { toast(failMsg(err)); }
+}
+async function toggleFav(id) {
+    const on = user.toggleFavorite(id);   // shown right away, undone if the server says no
+    toast(on ? 'Saved to favorites' : 'Removed from favorites');
+    refreshAll();
+    try {
+        await qsApi('/api/favorite', { spotId: id, on });
+        refreshGame();   // the Favorites fan badge depends on how many you saved
+    } catch (err) {
+        user.toggleFavorite(id);
+        refreshAll();
+        toast(failMsg(err));
+    }
+}
+
+// =====================================================
+// profile-view: the student's picture next to their 
+// comments and reports, and a profile popup that opens 
+// when you tap the picture or the name (like the spot 
+// Details popup). The picture comes from /api/avatar; 
+// with no picture the first letter of the name stays.
+// =====================================================
+
+const avHTML = (name, size = '') => `<button type="button" class="av avb ${size}" data-profile="${esc(name)}" aria-label="View profile of ${esc(name)}"><span class="avl">${esc(String(name)[0].toUpperCase())}</span><img src="/api/avatar?u=${encodeURIComponent(name)}" alt=""></button>`;
+const uLink = name => `<button type="button" class="ulink" data-profile="${esc(name)}">${esc(name)}</button>`;
+// the picture hides the letter once it has loaded; no picture (404) removes the <img>
+document.addEventListener('load', e => {
+    const t = e.target, box = t.tagName === 'IMG' && t.closest('.av, .up-av');
+    if (box) box.classList.add('has');
+}, true);
+document.addEventListener('error', e => {
+    const t = e.target;
+    if (t.tagName === 'IMG' && t.closest('.av, .up-av')) t.remove();
+}, true);
+
+const UP_PREFS = { quiet: 'Quiet places', outlets: 'Power outlets', wifi: 'Wi-Fi', aircon: 'Air-conditioning', cheap: 'Free or cheap', late: 'Open late' };
+const upDate = s => {
+    const d = new Date(s + 'T00:00:00');
+    return isNaN(d) ? s : d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+};
+function upHTML(p) {
+    const nm = p.fullName || p.userName, L = levelOf(p.points), me = isMe(p.userName);
+    const rows = [p.school && ['Studies at', p.school], p.course && ['Course', p.course], p.yearLevel && ['Year level', p.yearLevel],
+        p.location && ['Lives in', p.location], ['Account type', capWord(p.userType)]].filter(Boolean);
+    const tags = (list, cls) => `<div class="up-tags">${list.map(t => `<span class="up-tag ${cls}">${esc(t)}</span>`).join('')}</div>`;
+    const none = t => `<p class="meta" style="margin:0">${t}</p>`;
+    return `
+      <div class="up-head">
+        <div class="up-av" role="img" aria-label="Profile picture of ${esc(nm)}"><span class="avl">${esc(String(nm)[0].toUpperCase())}</span>${p.hasAvatar ? `<img src="/api/avatar?u=${encodeURIComponent(p.userName)}" alt="">` : ''}</div>
+        <div class="up-id">
+          <h2>${esc(nm)}</h2>
+          <p class="handle">@${esc(p.userName)}${me ? ' (you)' : ''}</p>
+          ${p.bio ? `<p class="bio">${esc(p.bio)}</p>` : ''}
+          <div class="up-chips"><span class="chip">Level ${L.idx + 1}, ${esc(L.cur.n)}</span><span class="chip">${p.points} pts</span>${p.memberSince ? `<span class="chip">Member since ${esc(upDate(p.memberSince))}</span>` : ''}</div>
+        </div>
+      </div>
+      <h3 class="sec">Activity</h3>
+      <div class="up-stats"><div><b>${p.points}</b><span>Points</span></div><div><b>${p.reportsMade}</b><span>Reports</span></div><div><b>${p.spotsAdded}</b><span>Spots added</span></div><div><b>${p.photosAdded}</b><span>Photos</span></div></div>
+      <div class="up-cols">
+        <div><h3 class="sec">Details</h3><ul class="up-det">${rows.map(([k, v]) => `<li><small>${k}</small>${esc(v)}</li>`).join('')}</ul></div>
+        <div><h3 class="sec">Study preferences</h3>${p.studyPrefs.length ? tags(p.studyPrefs.map(k => UP_PREFS[k] || k), 'pref') : none('None picked yet.')}
+          <h3 class="sec" style="margin-top:18px">Interests</h3>${p.interests.length ? tags(p.interests, '') : none('None added yet.')}</div>
+      </div>
+      ${me ? '<p class="meta" style="margin-top:16px">This is how other students see your profile. Email and birthday stay private.</p>' : ''}`;
+}
+let upSeq = 0;
+async function openProfile(name) {
+    if (!requireLogin('Please log in to continue.')) return;
+    let d = $('dlgUser');
+    if (!d) {   // made once, the first time it is needed, so every page can use it
+        d = document.createElement('dialog');
+        d.id = 'dlgUser';
+        d.className = 'wide';
+        d.innerHTML = '<div class="dlg"><div id="uBody"></div><div class="foot"><button class="btn" data-close>Close</button></div></div>';
+        document.body.appendChild(d);
+    }
+    const seq = ++upSeq;
+    $('uBody').innerHTML = '<p class="meta">Loading profile...</p>';
+    if (!d.open) d.showModal();
+    try {
+        const p = await qsApi('/api/profile/public', { target: name });
+        if (seq === upSeq) $('uBody').innerHTML = upHTML(p);
+    } catch (err) {
+        if (seq === upSeq) $('uBody').innerHTML = `<h2>Profile</h2><p class="meta">${esc(failMsg(err))}</p>`;
+    }
+}
+document.addEventListener('click', e => {
+    const el = e.target.closest('[data-profile]');
+    if (!el) return;
+    e.preventDefault();
+    openProfile(el.dataset.profile);
+});
+
 // One list for the Feed: the spot's reports (the same ones as "Recent reports" in Details, same votes)
 // plus the comments students typed. Newest first.
 function feedReportHTML(r) {
     const mine = r.mine, v = r.myVote;
-    return `<div class="cm"><span class="av">${esc(r.user[0].toUpperCase())}</span><div class="bub"><b>${esc(r.user)}${mine ? ' (you)' : ''}</b> <small>${ago(r.ts)}</small> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span>
+    return `<div class="cm">${avHTML(r.user)}<div class="bub"><b>${uLink(r.user)}${mine ? ' (you)' : ''}</b> <small>${ago(r.ts)}</small> <span class="tag ${r.net() >= 3 ? 'solid' : ''}" style="margin-left:4px">${verdict(r)}</span>
       <p>${esc(r.note || `${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd`)}</p>${r.note ? `<p class="meta" style="margin:0 0 4px">${NOISE[r.noise]} noise, ${CROWD[r.crowd]} crowd</p>` : ''}
       <span class="cvote" role="group" aria-label="Is this report accurate? Score ${r.net()}"><button class="lk up" data-act="vote" data-id="${r.id}" data-dir="1" aria-pressed="${v === 1}" aria-label="Upvote, report is accurate">▲</button><span class="cscore ${v === 1 ? 'pos' : v === -1 ? 'neg' : ''}" aria-live="polite">${r.net()}</span><button class="lk down" data-act="vote" data-id="${r.id}" data-dir="-1" aria-pressed="${v === -1}" aria-label="Downvote, report is not accurate">▼</button></span></div></div>`;
 }
 function feedCommentHTML(s, m, i) {
     const mine = isMe(m.user);
-    return `<div class="cm ${cmNet(m) <= -3 ? 'low' : ''}"><span class="av">${esc(m.user[0].toUpperCase())}</span><div class="bub"><b>${esc(m.user)}${mine ? ' (you)' : ''}</b> <small>${ago(m.ts)}</small> <span class="tag ${cmNet(m) >= 3 ? 'solid' : ''}" style="margin-left:4px">${cmVerdict(m)}</span><p>${esc(m.text)}</p><span class="cvote" role="group" aria-label="Votes on this comment, score ${cmNet(m)}"><button class="lk up" data-act="cm-like" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === 1}" aria-label="Upvote, helpful">▲</button><span class="cscore ${cmMine(m) === 1 ? 'pos' : cmMine(m) === -1 ? 'neg' : ''}" aria-live="polite">${cmNet(m)}</span><button class="lk down" data-act="cm-down" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === -1}" aria-label="Downvote, not helpful">▼</button></span>${mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}${cmNet(m) <= -3 ? '<span class="lowtag">Downvoted by students</span>' : ''}</div></div>`;
+    return `<div class="cm ${cmNet(m) <= -3 ? 'low' : ''}">${avHTML(m.user)}<div class="bub"><b>${uLink(m.user)}${mine ? ' (you)' : ''}</b> <small>${ago(m.ts)}</small> <span class="tag ${cmNet(m) >= 3 ? 'solid' : ''}" style="margin-left:4px">${cmVerdict(m)}</span><p>${esc(m.text)}</p><span class="cvote" role="group" aria-label="Votes on this comment, score ${cmNet(m)}"><button class="lk up" data-act="cm-like" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === 1}" aria-label="Upvote, helpful">▲</button><span class="cscore ${cmMine(m) === 1 ? 'pos' : cmMine(m) === -1 ? 'neg' : ''}" aria-live="polite">${cmNet(m)}</span><button class="lk down" data-act="cm-down" data-id="${s.id}" data-i="${i}" aria-pressed="${cmMine(m) === -1}" aria-label="Downvote, not helpful">▼</button></span>${mine ? `<button class="lk" data-act="cm-del" data-id="${s.id}" data-i="${i}">Delete</button>` : ''}${cmNet(m) <= -3 ? '<span class="lowtag">Downvoted by students</span>' : ''}</div></div>`;
 }
 function feedItems(s, sc) {
     const items = s.reports.map(r => ({ ts: r.ts, html: feedReportHTML(r) }));
@@ -1419,7 +1579,7 @@ function feedItems(s, sc) {
 }
 function renderFeed() {
     if (!$('feed')) return;
-    const q = $('fq').value.trim().toLowerCase(), so = $('fsort').value, quiet = $('fquiet').checked, rt = x => soc(x).sum / soc(x).count;
+    const q = $('fq').value.trim().toLowerCase(), so = $('fsort').value, quiet = $('fquiet').checked, rt = x => soc(x).count ? soc(x).sum / soc(x).count : 0;
     const list = spots.filter(s => (!q || (s.name + ' ' + s.kind).toLowerCase().includes(q)) && (!quiet || s.noise === 1));
     list.sort(so === 'rated' ? (a, b) => rt(b) - rt(a) : (a, b) => a.distance(state.pos) - b.distance(state.pos));
     if (!list.length) {
@@ -1427,7 +1587,7 @@ function renderFeed() {
         return;
     }
     $('feed').innerHTML = list.map(s => {
-        const sc = soc(s), avg = sc.sum / sc.count, fill = Math.round(myRate(sc) || avg), fav = user.favoriteSpots.has(s.id), d = s.distance(state.pos);
+        const sc = soc(s), avg = sc.count ? sc.sum / sc.count : 0, fill = Math.round(myRate(sc) || avg), fav = user.favoriteSpots.has(s.id), d = s.distance(state.pos);
         const real = s.photos.length > 0, img = real ? s.photos[0].src : spotArt(s);
         const stars = [1, 2, 3, 4, 5].map(i => `<button class="star ${i <= fill ? 'on' : ''}" data-act="rate" data-id="${s.id}" data-n="${i}" aria-label="Rate ${i} of 5 stars">★</button>`).join('');
         const cms = sc.open ? `<div class="cms">${feedItems(s, sc).map(it => it.html).join('')}
@@ -1436,7 +1596,7 @@ function renderFeed() {
       <header><span class="av">${esc(s.name[0])}</span><div><h3>${esc(s.name)}</h3><small>${esc(s.kind)}${s.isOpen ? '' : ', closed now'} · ${Math.max(1, Math.round(d / 60))} min walk (${d} m)</small></div>${s.isNew ? '<span class="tag solid">New</span>' : ''}</header>
       <button class="pic" data-act="view" data-id="${s.id}" aria-label="Open details of ${esc(s.name)}"><img src="${img}" alt="${real ? 'Photo' : 'Illustration'} of ${esc(s.name)}">${real ? '' : '<span class="cap">Illustration · open the spot to add a real photo</span>'}</button>
       <div class="stat"><span class="lv">${meter(s.noise, NOISE[s.noise] + ' noise')} ${NOISE[s.noise]}</span><span class="lv">${meter(s.crowd, CROWD[s.crowd] + ' crowd')} ${CROWD[s.crowd]} crowd</span>${extra(s)}<small>Updated ${ago(s.updatedAt)}</small></div>
-      <div class="rate"><span class="stars" role="group" aria-label="Rating">${stars}</span><b>${avg.toFixed(1)}</b><small>(${sc.count} ratings)${myRate(sc) ? ', you rated ' + myRate(sc) : ''}</small></div>
+      <div class="rate"><span class="stars" role="group" aria-label="Rating">${stars}</span><b>${sc.count ? avg.toFixed(1) : '–'}</b><small>(${sc.count} ${sc.count === 1 ? 'rating' : 'ratings'})${myRate(sc) ? ', you rated ' + myRate(sc) : ''}</small></div>
       <div class="acts"><button class="btn sm" data-act="cm-toggle" data-id="${s.id}">Comments (${feedItems(s, sc).length})</button><button class="btn sm" data-act="report" data-id="${s.id}">Report status</button><button class="btn sm" data-act="feed-photo" data-id="${s.id}">Add photo</button><button class="btn sm" data-act="share" data-id="${s.id}">Share</button><button class="btn sm" data-act="fav" data-id="${s.id}" aria-pressed="${fav}">${fav ? '★ Saved' : '☆ Save'}</button><button class="btn sm solid" data-act="view" data-id="${s.id}">Details</button></div>
       ${cms}</article>`;
     }).join('');
@@ -1446,35 +1606,15 @@ document.addEventListener('click', e => {
     if (!el)
         return;
     const a = el.dataset.act, s = byId(+el.dataset.id);
-    if (a === 'rate') {
-        const sc = soc(s), n = +el.dataset.n;
-        if (myRate(sc))
-            sc.sum -= myRate(sc);
-        else {
-            sc.count++;
-            award(POINTS.rating, 'rating shared');
-        }
-        sc.sum += n;
-        sc.rates[meKey()] = n;
-        renderFeed();
-    }
+    if (a === 'rate')
+        rateSpot(s, +el.dataset.n);
     if (a === 'cm-toggle') {
         const sc = soc(s);
         sc.open = !sc.open;
         renderFeed();
     }
-    if (a === 'cm-post') {
-        const sc = soc(s), txt = sc.draft.trim();
-        if (!txt) {
-            toast('Write a comment first.');
-            return;
-        }
-        sc.comments.push({ user: user.userName, text: txt, ts: Date.now(), up: 1, down: 0, votes: { [meKey()]: 1 } });   // starts with your upvote
-        sc.draft = '';
-        sc.open = true;
-        refreshAll();
-        award(POINTS.comment, 'feedback shared');
-    }
+    if (a === 'cm-post')
+        postComment(s);
 });
 document.addEventListener('input', e => { if (e.target.classList.contains('cm-in'))
     soc(byId(+e.target.dataset.id)).draft = e.target.value; });
@@ -1519,13 +1659,11 @@ document.addEventListener('click', e => {
     }
     if (a === 'cm-like' || a === 'cm-down') {
         const m = soc(s).comments[i];
-        cmVote(m, a === 'cm-like' ? 1 : -1);
-        refreshAll();
+        if (m) voteComment(m, a === 'cm-like' ? 1 : -1);
     }
     if (a === 'cm-del') {
-        soc(s).comments.splice(i, 1);
-        refreshAll();
-        toast('Comment deleted');
+        const m = soc(s).comments[i];
+        if (m) removeComment(s, m);
     }
 });
 ['fq', 'fsort', 'fquiet'].forEach(i => on(i, i === 'fq' ? 'input' : 'change', renderFeed));
@@ -1595,12 +1733,14 @@ async function deleteSpot(id) {
     refreshAll();
     toast('Spot deleted.');
 }
-function authDone(name, opts = {}) {   // opts.isNew is true right after sign up
+async function authDone(name, opts = {}) {   // opts.isNew is true right after sign up
     user = new User(name, 'Student');
     loggedIn = true;
     const b = $('authBtn');
     b.textContent = 'Logout';
     b.dataset.act = 'logout';
+    await loadSocial();   // this account's votes, ratings and favorites
+    await refreshGame();  // this account's points, streak, badges and the leaderboard
     refreshAll();
     const dest = opts.isNew ? 'setup' : nextPage;   // a new account sets up its profile first (like Facebook)
     nextPage = 'home';
@@ -1753,6 +1893,7 @@ on('profileForm', 'submit', async e => {
         renameAuthor(user.userName, data.userName);
         user.userName = data.userName;
         user.userType = data.userType.charAt(0) + data.userType.slice(1).toLowerCase();
+        refreshGame();   // the points history moved to the new username on the server
         if (typeof PF !== 'undefined' && PF) { PF.userName = user.userName; pfRender(); }   // profile header shows the new @username
         refreshAll();
         toast('Username updated.');
@@ -1852,25 +1993,6 @@ on('forgotForm', 'submit', async e => {
     } catch (err) { $('fpErr').textContent = NO_SERVER; }
 });
 
-// Sample reports from other students, added once per browser so the voting
-// (verify / dispute) can be tried. They match each spot's current status.
-function seedSampleReports() {
-    let done = null;
-    try { done = localStorage.getItem('qs-seed-v1'); } catch (e) { }
-    if (done || !spots.length) return;
-    const sets = [
-        [['Mika', 2, 0, 12, 'Tahimik pa dito, kaunti lang ang tao.'], ['Jen', 3, 0, 95, 'Maraming outlet malapit sa bintana.']],
-        [['Paolo', 1, 1, 25, 'Medyo maingay pag lunch break.'], ['Mika', 0, 2, 140, 'Puno na kanina, wala nang upuan.']],
-        [['Jen', 2, 0, 8, 'Okay ang Wi-Fi at malamig ang aircon.'], ['Paolo', 0, 0, 60, 'Maganda pumunta bago mag 10 am.']]
-    ];
-    spots.forEach((s, i) => {
-        if (s.reports.length) return;
-        s.reports = sets[i % sets.length].map(([user, up, down, m, note]) =>
-            new Report({ id: rid++, spotId: s.id, user, noise: s.noise, crowd: s.crowd, note, ts: mins(m), up, down }));
-    });
-    try { localStorage.setItem('qs-seed-v1', '1'); } catch (e) { }
-}
-
 // =====================================================
 // main.js: Start-up: runs when the page loads.
 // =====================================================
@@ -1879,29 +2001,16 @@ function seedSampleReports() {
 const STORE = 'qs-data-v4';
 const Social = {};
 function save() {
-    if (!spots.length) return;   // the spots are not loaded yet (page left too early): saving now would erase the saved reports and photos
+    if (!spots.length) return;   // the spots are not loaded yet (page left too early)
+    // Only the login and the points live in the browser now. Reports, comments, votes, ratings, photos and favorites are in MySQL.
     const data = {
-        loggedIn, pos: state.pos, rid, pid, social,
+        loggedIn, pos: state.pos,
         user: {
-            userName: user.userName, userType: user.userType, points: user.points, fav: [...user.favoriteSpots],
+            userName: user.userName, userType: user.userType, points: user.points,
             reportsMade: user.reportsMade, spotsAdded: user.spotsAdded, photosAdded: user.photosAdded
-        },
-        spots: spots.map(s => ({
-            id: s.id, type: s.constructor.name, isNew: s.isNew, name: s.name, address: s.address, x: s.x, y: s.y, hours: s.hours,
-            price: s.price, rules: s.rules, description: s.description, fac: { ...s.facility },
-            noise: s.noise, crowd: s.crowd, busy: s.busy, updatedAt: s.updatedAt, reports: s.reports, photos: s.photos
-        }))
-    };
-    try {
-        localStorage.setItem(STORE, JSON.stringify(data));
-    }
-    catch (e) {
-        try {
-            data.spots.forEach(x => x.photos = []);
-            localStorage.setItem(STORE, JSON.stringify(data));
         }
-        catch (e2) { }
-    }
+    };
+    try { localStorage.setItem(STORE, JSON.stringify(data)); } catch (e) { }
 }
 function loadState() {
     try { nextPage = sessionStorage.getItem('qs-next') || 'home'; } catch (e) { }
@@ -1911,33 +2020,18 @@ function loadState() {
     try {
         loggedIn = !!d.loggedIn;
         if (d.pos && Number.isFinite(d.pos.lat) && Number.isFinite(d.pos.lng)) state.pos = d.pos;
-        rid = Math.max(rid, d.rid || 1);
-        pid = Math.max(pid, d.pid || 1);
-        Object.assign(social, d.social || {});
         const u = d.user || {};
-        LEGACY_OWNER = String(u.userName || '').toLowerCase();
-        Object.values(social).forEach(socUpgrade);   // old shared votes go to the account that was saved with them, before anyone else logs in
         user = new User(u.userName || 'Guest', u.userType || 'Student');
         Object.assign(user, { points: u.points ?? 20, reportsMade: u.reportsMade || 0, spotsAdded: u.spotsAdded || 0, photosAdded: u.photosAdded || 0 });
-        user.favoriteSpots = new Set(u.fav || []);
-        (d.spots || []).forEach(o => {
-            const s = byId(o.id);
-            // The server is the list of truth: a spot it no longer has (deleted, or lost in an old restart) stays gone,
-            // and a saved entry is only used if the name still matches (ids can be reused).
-            if (!s || s.name !== o.name) return;
-            Object.assign(s, { noise: o.noise, crowd: o.crowd, updatedAt: o.updatedAt, busy: o.busy || s.busy });
-            s.reports = (o.reports || []).map(r => new Report(r));
-            if (o.photos && o.photos.length) s.photos = o.photos.map(p => new Photo(p));
-        });
     }
     catch (e) { console.warn('Could not restore saved data', e); }
 }
 window.addEventListener('pagehide', save);
 
  
-//=====================================================
-//main.js: Start-up: runs when each page loads.
-//=====================================================
+// =====================================================
+// main.js: Start-up: runs when each page loads.
+// =====================================================
 
 loadState();
 loadSpotsFromJava().then(async ok => {
@@ -1947,7 +2041,8 @@ loadSpotsFromJava().then(async ok => {
         if (PUBLIC_PAGES.includes(CURRENT)) { loggedIn = false; user = new User('Guest', 'Student'); save(); }
         else { accountGone(); return; }
     }
-    seedSampleReports();
+    await loadSocial();   // reports, comments, votes, ratings, photos and favorites from MySQL
+    await refreshGame();  // points, streak, badges and the weekly leaderboard from MySQL
     document.querySelectorAll('nav.main .pill').forEach(b =>
         b.setAttribute('aria-current', b.dataset.page === CURRENT ? 'page' : 'false')
     );

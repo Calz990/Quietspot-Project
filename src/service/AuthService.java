@@ -1,6 +1,5 @@
 package service;
 
-import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import model.UserAccount;
@@ -9,14 +8,14 @@ import exception.InvalidInputException;
 
 public class AuthService {
     private final Map<String, UserAccount> users = new HashMap<>();
-    private final UserStore store;
+    private final UserStorage store;
 
-    // Accounts are saved in data/users.tsv, so they are still there after the server restarts.
+    // Accounts are saved in MySQL (or in data/users.tsv when no database is set up), so they are still there after the server restarts.
     public AuthService() {
-        this(new UserStore(Paths.get("data", "users.tsv")));
+        this(Storage.users());
     }
 
-    public AuthService(UserStore store) {
+    public AuthService(UserStorage store) {
         this.store = store;
         for (UserAccount u : store.load()) users.put(u.getUserName().toLowerCase(), u);
     }

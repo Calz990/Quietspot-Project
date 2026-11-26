@@ -10,14 +10,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * The public-facing profile of a UserAccount (like a Facebook profile):
- * name, photos, bio, school details, study preferences and interests.
- *
- * Encapsulation: every field is private. The only way to change them is
- * update(), which validates everything first and applies it only if ALL
- * values are valid (so a bad value never leaves a half-saved profile).
- */
+// The public-facing profile of a UserAccount (like a Facebook profile):
+// name, photos, bio, school details, study preferences and interests.
+
+// Encapsulation: every field is private. The only way to change them is
+// update(), which validates everything first and applies it only if ALL
+// values are valid (so a bad value never leaves a half-saved profile).
+
 public class UserProfile {
     public static final int MAX_NAME = 60;
     public static final int MAX_BIO = 150;
@@ -46,7 +45,7 @@ public class UserProfile {
         this.fullName = (fullName == null || fullName.isBlank()) ? "" : clean(fullName);
     }
 
-    // ---------- getters ----------
+    // getters
     public String getFullName() { return fullName; }
     public String getBio() { return bio; }
     public String getSchool() { return school; }
@@ -60,12 +59,11 @@ public class UserProfile {
     public boolean isSetupDone() { return setupDone; }
     public void markSetupDone() { this.setupDone = true; }
 
-    /**
-     * Applies only the keys that are present in the map (so saving one step of the
-     * setup never erases the other steps). An empty value clears that field.
-     * Keys: fullName, bio, school, course, yearLevel, location, birthday,
-     *       interests (comma separated), studyPrefs (comma separated), avatar.
-     */
+    // Applies only the keys that are present in the map (so saving one step of the
+    // setup never erases the other steps). An empty value clears that field.
+    // Keys: fullName, bio, school, course, yearLevel, location, birthday,
+    //       interests (comma separated), studyPrefs (comma separated), avatar.
+
     public void update(Map<String, String> d) throws InvalidInputException {
         // 1. Validate into local copies first.
         String nName = fullName, nBio = bio, nSchool = school, nCourse = course,
@@ -99,7 +97,7 @@ public class UserProfile {
         avatar = nAvatar;
     }
 
-    // ---------- profile strength (like Facebook's "complete your profile") ----------
+    // profile strength (like Facebook's "complete your profile")
     private static final String[] STRENGTH_LABELS = {
             "Add a profile picture", "Write a short bio", "Add your school",
             "Add your course", "Add your year level", "Add your location", "Add your birthday",
@@ -114,14 +112,14 @@ public class UserProfile {
         };
     }
 
-    /** 0 to 100 (percent of the profile items that are filled in). */
+    // 0 to 100 (percent of the profile items that are filled in).
     public int completion() {
         int n = 0;
         for (boolean b : filled()) if (b) n++;
         return n * 100 / STRENGTH_LABELS.length;
     }
 
-    /** What is still missing, as short to-do labels. */
+    // What is still missing, as short to-do labels.
     public List<String> missingItems() {
         List<String> out = new ArrayList<>();
         boolean[] f = filled();
@@ -129,9 +127,9 @@ public class UserProfile {
         return out;
     }
 
-    // ---------- validation helpers ----------
+    // validation helpers
 
-    /** Removes control characters, collapses spaces, trims. Null becomes "". */
+    // Removes control characters, collapses spaces, trims. Null becomes "".
     private static String clean(String s) {
         if (s == null) return "";
         return s.replaceAll("\\p{Cntrl}", " ").replaceAll("\\s+", " ").trim();
@@ -184,7 +182,7 @@ public class UserProfile {
         return new ArrayList<>(out);
     }
 
-    /** Accepts "" (remove the photo) or a small base64 image (jpeg, png, webp). */
+    // Accepts "" (remove the photo) or a small base64 image (jpeg, png, webp).
     private static String checkImage(String s, int maxChars, String label) throws InvalidInputException {
         if (s == null || s.isBlank()) return "";
         String v = s.trim();

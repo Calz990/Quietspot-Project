@@ -10,12 +10,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 
-/**
- * Saves accounts (and their profiles) to a plain tab-separated file, data/users.tsv, so they are
- * still there after the server restarts. Each save writes a temp file first and then replaces the
- * real one, so a crash in the middle can never leave a half-written file.
- */
-public class UserStore {
+// Saves accounts (and their profiles) to a plain tab-separated file, data/users.tsv, so they are
+// still there after the server restarts. Each save writes a temp file first and then replaces the
+// real one, so a crash in the middle can never leave a half-written file.
+
+public class UserStore implements UserStorage {
     private static final int COLUMNS = 21;
     private final Path file;
 
@@ -49,15 +48,7 @@ public class UserStore {
     public void save(Collection<UserAccount> users) {
         StringBuilder sb = new StringBuilder("# QuietSpot accounts. Do not share this file: it holds password hashes.\n");
         for (UserAccount u : users) {
-            UserProfile p = u.getProfile();
-            String[] c = {
-                u.getUserName(), u.getUserType().name(), u.getPasswordHash(), String.valueOf(u.getPoints()),
-                String.valueOf(u.getReportsMade()), String.valueOf(u.getSpotsAdded()), String.valueOf(u.getPhotosAdded()),
-                nz(u.getEmail()), nz(u.getCreatedAt()), joinInts(u.getFavoriteSpots()),
-                nz(p.getFullName()), p.getBio(), p.getSchool(), p.getCourse(), p.getYearLevel(), p.getLocation(),
-                p.getBirthday(), String.join(",", p.getInterests()), String.join(",", p.getStudyPrefs()),
-                p.getAvatar(), String.valueOf(p.isSetupDone())
-            };
+            String[] c = toValues(u);
             for (int i = 0; i < c.length; i++) {
                 if (i > 0) sb.append('\t');
                 sb.append(escape(c[i]));
@@ -79,14 +70,34 @@ public class UserStore {
         }
     }
 
+    // The 21 values of one account, in the TSV column order. Also used by MySqlUserStore.
+    static String[] toValues(UserAccount u) {
+        UserProfile p = u.getProfile();
+        String[] c = {
+            u.getUserName(), u.getUserType().name(), u.getPasswordHash(), String.valueOf(u.getPoints()),
+            String.valueOf(u.getReportsMade()), String.valueOf(u.getSpotsAdded()), String.valueOf(u.getPhotosAdded()),
+            nz(u.getEmail()), nz(u.getCreatedAt()), joinInts(u.getFavoriteSpots()),
+            nz(p.getFullName()), p.getBio(), p.getSchool(), p.getCourse(), p.getYearLevel(), p.getLocation(),
+            p.getBirthday(), String.join(",", p.getInterests()), String.join(",", p.getStudyPrefs()),
+            p.getAvatar(), String.valueOf(p.isSetupDone())
+        };
+        return c;
+    }
+
     private static UserAccount fromColumns(String[] raw) {
         String[] c = new String[raw.length];
         for (int i = 0; i < raw.length; i++) c[i] = unescape(raw[i]);
+        return fromValues(c);
+    }
+
+    // Builds an account from 21 already-unescaped values (TSV column order). Also used by MySqlUserStore.
+    static UserAccount fromValues(String[] c) {
         Set<Integer> favs = new HashSet<>();
         for (String f : c[9].split(",")) if (!f.isBlank()) favs.add(Integer.parseInt(f.trim()));
         UserAccount u = UserAccount.restore(c[0], UserType.valueOf(c[1]), c[2], Integer.parseInt(c[3]),
                 Integer.parseInt(c[4]), Integer.parseInt(c[5]), Integer.parseInt(c[6]), c[7].isEmpty() ? null : c[7],
                 c[8], favs);
+
         // Profile fields go back in through the profile's own validation, one at a time, so one bad value can't lose the rest.
         String[] keys = {"fullName", "bio", "school", "course", "yearLevel", "location", "birthday", "interests", "studyPrefs", "avatar"};
         for (int i = 0; i < keys.length; i++) {

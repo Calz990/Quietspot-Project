@@ -1,7 +1,7 @@
 /*
-=====================================================
+===========================================================================
 base.css: Variables (colors, fonts), resets, and base element styles.;
-=====================================================
+===========================================================================
 */
 
 :root {
@@ -85,9 +85,11 @@ button,input,select,textarea {
   outline-offset: 3px;
 }
 
-/* =====================================================
-   layout.css: Top bar, navigation pills, and the Light/Dark switch.;
-   ===================================================== */
+/* 
+===================================================================
+layout.css: Top bar, navigation pills, and the Light/Dark switch.;
+===================================================================
+*/
 
 /* top bar */
 .bar {
@@ -276,9 +278,11 @@ input[type=checkbox],input[type=radio] {
   display: none;
 }
 
-/* =====================================================
-   home.css: Home page hero and landing section.;
-   ===================================================== */
+/* 
+====================================================================
+home.css: Home page hero and landing section.;
+====================================================================
+*/
 
 /* home */
 .hero {
@@ -410,9 +414,12 @@ input[type=checkbox],input[type=radio] {
   height: auto;
 }
 
-/* =====================================================
-   spots.css: Shared page layout plus the Spots registry (filters, table, map).;
-   ===================================================== */
+/* 
+====================================================================
+spots.css: Shared page layout plus the Spots registry 
+(filters, table, map).;
+====================================================================
+*/
 
 /* shared */
 .wrap {
@@ -655,9 +662,11 @@ aside h3 {
   margin: 10px 0 0;
 }
 
-/* =====================================================
-   dashboard.css: Dashboard, About page, and profile panels.;
-   ===================================================== */
+/*
+====================================================================
+dashboard.css: Dashboard, About page, and profile panels.;
+====================================================================
+*/
 
 /* dashboard */
 .stats {
@@ -1056,9 +1065,11 @@ dl.det dd {
   }
 }
 
-/* =====================================================
-   components.css: Dialogs, forms, buttons inside popups, toasts.;
-   ===================================================== */
+/*
+====================================================================
+components.css: Dialogs, forms, buttons inside popups, toasts.;
+====================================================================
+*/
 
 /* dialogs and forms */
 dialog {
@@ -1442,9 +1453,12 @@ h3.sec {
   cursor: not-allowed;
 }
 
-/* =====================================================
-   feed.css: Feed posts, ratings, comments, Reco page, and Login/Sign Up forms.;
-   ===================================================== */
+/*
+====================================================================
+feed.css: Feed posts, ratings, comments, Reco page, 
+and Login/Sign Up forms.;
+====================================================================
+*/
 
 .feedwrap {
   max-width: 720px;
@@ -1664,9 +1678,13 @@ input[type=password]:focus {
   margin-left: 16px;
 }
 
-/* =====================================================
-   palettes.css: Color palettes (Teal, Blue, Sage, Sunset, Violet, Ocean, Rose) and status colors. Keep this file LAST so it overrides the others.;
-   ===================================================== */
+/*
+====================================================================
+palettes.css: Color palettes (Teal, Blue, Sage, Sunset, 
+Violet, Ocean, Rose) and status colors. Keep this file LAST so 
+it overrides the others.;
+====================================================================
+*/
 
 /* color palettes */
 :root {
@@ -2024,10 +2042,12 @@ input[type=password]:focus {
   display: none;
 }
 
-/* =====================================================
-   game.css: Levels, streaks, badge shelf, weekly board,
-   header chip, and the unlock popup.;
-   ===================================================== */
+/*
+====================================================================
+game.css: Levels, streaks, badge shelf, weekly board,
+header chip, and the unlock popup.;
+====================================================================
+*/
 
 .vh {
   position: absolute;
@@ -2739,9 +2759,12 @@ ol.wk {
   font-size: .78rem;
   font-style: italic;
 }
-/* =====================================================
-   map.css: Leaflet map on the Spots page.
-   ===================================================== */
+/*
+====================================================================
+map.css: Leaflet map on the Spots page.
+====================================================================
+*/
+
 .mapcard #map {
   height: 420px;
   position: relative;
@@ -2795,3 +2818,35 @@ dl.det.acdet { grid-template-columns: 160px 1fr; margin: 12px 0 0; }
 .btn.danger:hover:not(:disabled) { background: var(--danger); color: #fff; }
 .btn.danger:disabled { opacity: .5; cursor: not-allowed; }
 .dz-warn { background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 10px; padding: 12px 14px; font-size: .92rem; }
+
+/* ---------- profile picture in comments + profile popup ---------- */
+.av { position: relative; overflow: hidden; }
+.av img, .up-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+.av.has .avl, .up-av.has .avl { visibility: hidden; }
+button.av { padding: 0; margin: 0; font: inherit; font-weight: 700; cursor: pointer; }
+button.av:hover { border-color: var(--ink); }
+button.av:focus-visible, .ulink:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.av.sm { display: inline-grid; width: 24px; height: 24px; font-size: .7rem; margin-right: 6px; vertical-align: middle; }
+.ulink { background: none; border: 0; padding: 0; margin: 0; font: inherit; font-weight: 700; color: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; }
+.ulink:hover { text-decoration-color: currentColor; }
+
+.up-head { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.up-av { flex: none; position: relative; overflow: hidden; width: 104px; height: 104px; border-radius: 50%; background: var(--brand, var(--ink)); color: var(--on-brand, var(--on-ink)); display: grid; place-items: center; font-family: var(--head); font-weight: 700; font-size: 2.2rem; box-shadow: 0 0 0 2px var(--ink); }
+.up-id { flex: 1; min-width: 200px; }
+.up-id h2 { margin: 0; overflow-wrap: anywhere; }
+.up-id .handle { color: var(--muted); font-weight: 700; margin: 2px 0 0; }
+.up-id .bio { margin: 8px 0 0; overflow-wrap: anywhere; }
+.up-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.up-chips .chip { cursor: default; }
+.up-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; }
+.up-stats div { border: 2px solid var(--line); border-radius: 12px; padding: 8px 10px; text-align: center; }
+.up-stats b { display: block; font-family: var(--head); font-size: 1.35rem; }
+.up-stats span { color: var(--muted); font-size: .85rem; font-weight: 700; }
+.up-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.up-det { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.up-det li { overflow-wrap: anywhere; }
+.up-det small { display: block; color: var(--muted); }
+.up-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.up-tag { border: 2px solid var(--line); border-radius: 999px; padding: 3px 12px; font-size: .88rem; font-weight: 700; background: var(--surface2); }
+.up-tag.pref { border-color: var(--ink); background: var(--surface); }
+@media (max-width: 640px) { .up-cols { grid-template-columns: 1fr; } }

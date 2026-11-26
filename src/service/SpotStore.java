@@ -8,12 +8,11 @@ import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Saves the spots that students added (not the built-in ones) to data/spots.tsv, so they are
- * still there after the server restarts and can be deleted for real. Same temp-file-then-replace
- * saving as UserStore.
- */
-public class SpotStore {
+// Saves the spots that students added (not the built-in ones) to data/spots.tsv, so they are
+// still there after the server restarts and can be deleted for real. Same temp-file-then-replace
+// saving as UserStore.
+
+public class SpotStore implements SpotStorage {
     private static final int COLUMNS = 19;
     private final Path file;
 
@@ -48,16 +47,7 @@ public class SpotStore {
         StringBuilder sb = new StringBuilder("# QuietSpot: spots added by students\n");
         for (SpotArea s : spots) {
             if (s.getCreatedBy().isEmpty()) continue;   // built-in spots are created by the server itself
-            Facility f = s.getFacility();
-            String[] c = {
-                String.valueOf(s.getId()), s.getClass().getSimpleName(), s.getName(), s.getAddress(),
-                String.valueOf(s.getX()), String.valueOf(s.getY()),
-                String.valueOf(s.getHours()[0]), String.valueOf(s.getHours()[1]), String.valueOf(s.getPrice()),
-                String.valueOf(s.getNoise().ordinal()), String.valueOf(s.getCrowd().ordinal()),
-                String.valueOf(f.isWifi()), String.valueOf(f.getMbps()), String.valueOf(f.isOutlets()),
-                String.valueOf(f.isAircon()), String.valueOf(f.isFood()),
-                nz(s.getDescription()), nz(s.getRules()), s.getCreatedBy()
-            };
+            String[] c = toValues(s);
             for (int i = 0; i < c.length; i++) {
                 if (i > 0) sb.append('\t');
                 sb.append(escape(c[i]));
@@ -79,9 +69,29 @@ public class SpotStore {
         }
     }
 
+    // The 19 values of one spot, in the TSV column order. Also used by MySqlSpotStore.
+    static String[] toValues(SpotArea s) {
+        Facility f = s.getFacility();
+        String[] c = {
+            String.valueOf(s.getId()), s.getClass().getSimpleName(), s.getName(), s.getAddress(),
+            String.valueOf(s.getX()), String.valueOf(s.getY()),
+            String.valueOf(s.getHours()[0]), String.valueOf(s.getHours()[1]), String.valueOf(s.getPrice()),
+            String.valueOf(s.getNoise().ordinal()), String.valueOf(s.getCrowd().ordinal()),
+            String.valueOf(f.isWifi()), String.valueOf(f.getMbps()), String.valueOf(f.isOutlets()),
+            String.valueOf(f.isAircon()), String.valueOf(f.isFood()),
+            nz(s.getDescription()), nz(s.getRules()), s.getCreatedBy()
+        };
+        return c;
+    }
+
     private static SpotArea fromColumns(String[] raw) {
         String[] c = new String[raw.length];
         for (int i = 0; i < raw.length; i++) c[i] = unescape(raw[i]);
+        return fromValues(c);
+    }
+
+    // Builds a spot from 19 already-unescaped values (TSV column order). Also used by MySqlSpotStore.
+    static SpotArea fromValues(String[] c) {
         int id = Integer.parseInt(c[0]);
         int[] hours = {Integer.parseInt(c[6]), Integer.parseInt(c[7])};
         double price = Double.parseDouble(c[8]);
