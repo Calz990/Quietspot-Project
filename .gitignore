@@ -19,7 +19,7 @@ build/
 *.war
 
 # --- Dependencies ---
-# lib/ (MySQL Connector/J jar) IS committed so teammates can clone and run without installing it.
+# lib/ (MySQL Connector/J jar).
 
 # --- Logs & crash dumps ---
 *.log
