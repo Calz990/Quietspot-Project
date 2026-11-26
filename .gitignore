@@ -1,91 +1,61 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
+# ===== QuietSpot (Java + MySQL + plain web front end) =====
 
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-target/
-
-# DotEnv configuration
+# --- Secrets & private data: NEVER commit these ---
+# Real DB login. Commit only config/db.properties.example (blank template).
+config/db.properties
 .env
-
-# Database
-*.db
-*.rdb
+.env.*
+*.pem
+*.key
+# Local fallback storage: user accounts + password hashes, student-added spots
 data/
 
-# Pycharm
-.idea
+# --- Compiled output ---
+*.class
+bin/
+out/
+target/
+build/
+*.war
 
-# VS Code
+# --- Dependencies ---
+# lib/ (MySQL Connector/J jar) IS committed so teammates can clone and run without installing it.
+
+# --- Logs & crash dumps ---
+*.log
+hs_err_pid*
+replay_pid*
+
+# --- Databases / dumps ---
+*.db
+*.sqlite
+*.sqlite3
+*.rdb
+*.sql.bak
+*.dump
+
+# --- IDEs ---
+.idea/
+*.iml
 .vscode/
 *.code-workspace
+.classpath
+.project
+.settings/
+.factorypath
+nbproject/
+.apt_generated/
 
-# Spyder
-.spyproject/
-
-# Jupyter NB Checkpoints
-.ipynb_checkpoints/
-
-# Mac OS-specific storage files
+# --- OS junk ---
 .DS_Store
-
-# vim
+Thumbs.db
+desktop.ini
+*~
 *.swp
 *.swo
 
-# Mypy cache
-.mypy_cache/
-
-# Virtual environment
-.venv/
+# --- Temp / scratch ---
+tmp/
+temp/
+*.tmp
+*.bak
