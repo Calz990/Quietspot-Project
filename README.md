@@ -2,7 +2,7 @@
 
 <img src="web/images/banner.jpg" alt="QuietSpot Banner" width="100%" />
 
-# QuietSpot
+# 📍 QuietSpot
 ### *"Find your focus, skip the crowd."*
 **Real-Time Study Area Tracker and Finder in Batangas City**
 
@@ -60,8 +60,10 @@
 QuietSpot/
 ├── config/                              # Optional MySQL configuration (db.properties)
 ├── data/                                # Fallback atomic TSV storage (users.tsv, spots.tsv)
+├── db/                                  # Database schema script (schema.sql)
+├── docs/                                # Setup guides & project proposal
 ├── lib/                                 # MySQL JDBC connector JAR (mysql-connector-j)
-├── screenshots/                         # Application screenshots & test output captures
+├── screenshot/                          # Application screenshots & test output captures
 ├── src/                                 # Java Backend Source Code
 │   ├── Main.java                        # Entry point & embedded Java HttpServer (Port 8080)
 │   ├── exception/
@@ -366,7 +368,7 @@ classDiagram
 
 ## 🚀 How to Run the Program
 
-1. **Check Prerequisites:** Ensure **Java Development Kit (JDK) 17 or higher** is installed on your computer. *(Optional: MySQL 8.0+ with `mysql-connector-j` in `lib/` for full social, photo, streak, and leaderboard features.)*
+1. **Check Prerequisites:** Ensure **Java Development Kit (JDK) 17 or higher** is installed on your computer. *(Optional: MySQL 8.0+ via XAMPP or MySQL Community Server with `mysql-connector-j` in `lib/` for full social, photo, streak, and leaderboard features.)*
 2. **Clone the Repository:**
    ```bash
    git clone [https://github.com/Calz990/Quietspot-Project.git](https://github.com/Calz990/Quietspot-Project.git)
@@ -413,10 +415,9 @@ java -cp "out;lib/*" Main
 ---
 
 ### 🖼️ Visual Walkthrough & Output Captures
-> *(Save your captured screenshots inside the `screenshots/` folder using the filenames below so they render automatically on GitHub.)*
 
 #### 1. 🖥️ Backend Server Startup & Console Output
-*Embedded Java `HttpServer` starting on `http://localhost:8080` and initializing storage.*
+*Embedded Java `HttpServer` starting on `http://localhost:8080` and initializing database persistence.*
 
 ```text
 =========================================
@@ -424,56 +425,82 @@ QuietSpot Java Server is running!
 Opening http://localhost:8080...
 =========================================
 ```
-<img src="screenshots/01-server-console.png" alt="QuietSpot Java Server Console Output" width="100%" />
+
+<p align="center">
+  <img src="screenshot/01-server-console.png" alt="QuietSpot Java Server Console Output" width="760" />
+</p>
 
 ---
 
 #### 2. 🏠 Landing Page (`index.html`) & Theme Palettes
 *Split-screen hero view showing live quiet-spot counts, Light/Dark mode toggle, and 8 customizable color palettes.*
 
-<img src="screenshots/02-home-landing.png" alt="QuietSpot Landing Page" width="100%" />
+<p align="center">
+  <img src="screenshot/02-home-landing.png" alt="QuietSpot Landing Page" width="760" />
+</p>
 
 ---
 
 #### 3. 🧭 Preference-Based Spot Recommender (`reco.html`)
 *Ticking study preferences (quiet environment, Wi-Fi, power outlets, air-conditioning, budget) to rank the best matching spots in real time.*
 
-<img src="screenshots/03-spot-recommender.png" alt="QuietSpot Preference Recommender" width="100%" />
+<p align="center">
+  <img src="screenshot/03-spot-recommender.png" alt="QuietSpot Preference Recommender" width="760" />
+</p>
 
 ---
 
 #### 4. 🗺️ Spot Registry & Interactive Leaflet Map (`spots.html`)
 *Multi-criteria filtering by noise, crowd, price, and facilities paired with an interactive OpenStreetMap pin view.*
 
-<img src="screenshots/04-spots-map.png" alt="QuietSpot Registry and Leaflet Map" width="100%" />
+<table>
+  <tr>
+    <td width="50%"><img src="screenshot/04-spots-map.png" alt="QuietSpot Registry and Leaflet Map View" width="100%" /></td>
+    <td width="50%"><img src="screenshot/04-spots-map-1.png" alt="QuietSpot Filtered Registry and Map" width="100%" /></td>
+  </tr>
+</table>
 
 ---
 
 #### 5. ➕ Add New Study Spot Modal (`#dlgAdd`)
 *Recommending a new study location with category selection, operating hours, facilities, custom map coordinates, and photo upload.*
 
-<img src="screenshots/05-add-spot-modal.png" alt="QuietSpot Add New Study Spot Form" width="100%" />
+<table>
+  <tr>
+    <td width="50%"><img src="screenshot/05-add-spot-modal.png" alt="QuietSpot Add New Study Spot Form" width="100%" /></td>
+    <td width="50%"><img src="screenshot/05-add-spot-modal-1.png" alt="QuietSpot Add New Study Spot Details" width="100%" /></td>
+  </tr>
+</table>
 
 ---
 
 #### 6. 💬 Community Feed, Spot Details & Live Status Reporting (`feed.html`)
 *Real-time noise/crowd status updates, 1–5 star ratings, photo gallery lightbox, and community upvote/downvote verification.*
 
-<img src="screenshots/06-feed-and-report.png" alt="QuietSpot Feed and Live Status Reporting" width="100%" />
+<p align="center">
+  <img src="screenshot/06-feed-and-report.png" alt="QuietSpot Feed and Live Status Reporting" width="760" />
+</p>
 
 ---
 
 #### 7. 📊 Dashboard Analytics, Busy-Hours Heatmap & Gamification (`dashboard.html` & `account.html`)
 *Campus-wide 8:00 AM–8:00 PM busy-hours heatmap, circular level progress ring, daily streaks, weekly leaderboard, and 8-badge trophy shelf.*
 
-<img src="screenshots/07-dashboard-gamification.png" alt="QuietSpot Dashboard and Gamification" width="100%" />
+<table>
+  <tr>
+    <td width="50%"><img src="screenshot/07-dashboard-gamification.png" alt="QuietSpot Dashboard Overview and Heatmap" width="100%" /></td>
+    <td width="50%"><img src="screenshot/07-dashboard-gamification-1.png" alt="QuietSpot Gamification Streaks, Levels and Badges" width="100%" /></td>
+  </tr>
+</table>
 
 ---
 
 #### 8. 🔐 Authentication & Validation Test Cases (`login.html`, `signup.html`, `setup-profile.html`)
 *4-step profile setup wizard with live preview and graceful `InvalidInputException` error handling.*
 
-<img src="screenshots/08-auth-validation.png" alt="QuietSpot Authentication and Validation" width="100%" />
+<p align="center">
+  <img src="screenshot/08-auth-validation.png" alt="QuietSpot Authentication and Validation" width="760" />
+</p>
 
 ---
 
