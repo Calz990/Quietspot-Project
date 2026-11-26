@@ -548,7 +548,7 @@ public class Main {
         System.out.println("=========================================");
         System.out.println("QuietSpot Java Server is running!");
         if (social == null)
-            System.out.println("NOTE: no MySQL database is set up, so reports, comments, ratings, photos, streaks and the leaderboard are switched off (see docs/DATABASE_SETUP.md).");
+            System.out.println("WARNING: no MySQL database is set up, so reports, comments, ratings, photos, streaks and the leaderboard are switched off (see docs/DATABASE_SETUP.md).");
         System.out.println("Opening " + url + "...");
         System.out.println("=========================================");
         openBrowser(url);
