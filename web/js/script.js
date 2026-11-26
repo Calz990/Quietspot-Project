@@ -177,6 +177,9 @@ let nextPage = 'home';
 let user = new User('Guest', 'Student');
 const PUBLIC_PAGES = [
     'home', 
+    'feed',
+    'reco',
+    'spots',
     'about', 
     'login', 
     'signup'
@@ -1061,7 +1064,7 @@ function openPhoto(photoId) {
     $('lbCap').textContent = `${p.mine ? 'You' : p.user}, ${ago(p.ts)}${p.caption ? ': ' + p.caption : ''}`;
     $('dlgPhoto').showModal();
 }
-function openSpot(id) { if (!requireLogin('Please log in to continue.')) return; state.sel = id; renderTop(); renderPhotos(); renderReports(); renderMap(); $('dlgSpot').showModal(); }
+function openSpot(id) { state.sel = id; renderTop(); renderPhotos(); renderReports(); renderMap(); $('dlgSpot').showModal(); }
 function refreshAll() { gameSync(); renderFeed(); renderHome(); renderRows(); renderMap(); renderDash(); renderChip(); save(); if ($('dlgSpot') && $('dlgSpot').open) {
     renderTop();
     renderPhotos(true);
@@ -1697,12 +1700,36 @@ function renderReco() {
 // AuthService.
 // =====================================================
 
-// While logged out, only navigation and logout buttons work.
+// While logged out, a guest can browse (Feed, Reco, Spots, spot details, comments) but anything that
+// saves something (report, vote, rate, comment, favorite, photo, add spot) asks them to log in first.
+const GUEST_OK = ['go', 'logout', 'go-search', 'view', 'clear', 'zoom', 'cm-toggle', 'share'];
+const GUEST_MSG = {
+    report: 'Please log in first to report a status.',
+    'go-report': 'Please log in first to report a status.',
+    vote: 'Please log in to vote.',
+    'cm-like': 'Please log in to vote.',
+    'cm-down': 'Please log in to vote.',
+    'cm-post': 'Please log in to comment.',
+    'cm-del': 'Please log in to continue.',
+    rate: 'Please log in to rate a spot.',
+    fav: 'Please log in to save favorites.',
+    'feed-photo': 'Please log in to add a photo.',
+    delphoto: 'Please log in to continue.',
+    'go-add': 'Please log in to add a spot.',
+    'del-spot': 'Please log in to continue.'
+};
 document.addEventListener('click', e => {
+    if (loggedIn) return;
+    if (e.target.closest('.filebtn')) {   // the "Add photo" button inside the spot details
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        requireLogin('Please log in to add a photo.');
+        return;
+    }
     const el = e.target.closest('[data-act]');
-    if (!el || loggedIn || ['go', 'logout'].includes(el.dataset.act)) return;
+    if (!el || GUEST_OK.includes(el.dataset.act)) return;
     e.stopImmediatePropagation();
-    requireLogin('Please log in to continue.', {'go-search': 'feed', 'go-report': 'spots'}[el.dataset.act]);
+    requireLogin(GUEST_MSG[el.dataset.act] || 'Please log in to continue.', {'go-report': 'spots'}[el.dataset.act]);
 }, true);
 function requireLogin(message, backTo) {
     if (loggedIn) return true;

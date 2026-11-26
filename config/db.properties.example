@@ -11,4 +11,3 @@ db.password=
 # When db.url is set, db.host / db.port / db.name are ignored and the database must already exist.
 # You can also set the environment variables DB_URL, DB_USER and DB_PASSWORD, which win over this file.
 #db.url=jdbc:mysql://HOST:4000/quietspot?sslMode=VERIFY_IDENTITY
-    
