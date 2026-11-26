@@ -371,7 +371,7 @@ classDiagram
 1. **Check Prerequisites:** Ensure **Java Development Kit (JDK) 17 or higher** is installed on your computer. *(Optional: MySQL 8.0+ via XAMPP or MySQL Community Server with `mysql-connector-j` in `lib/` for full social, photo, streak, and leaderboard features.)*
 2. **Clone the Repository:**
    ```bash
-   git clone [https://github.com/Calz990/Quietspot-Project.git](https://github.com/Calz990/Quietspot-Project.git)
+   git clone https://github.com/Calz990/Quietspot-Project.git
    cd Quietspot-Project
    ```
 3. **Open in IDE (IMPORTANT):** Open the `QuietSpot` root folder directly in **Visual Studio Code** (with the *Extension Pack for Java*) or any Java IDE.
@@ -495,11 +495,21 @@ Opening http://localhost:8080...
 
 ---
 
-#### 8. 🔐 Authentication & Validation Test Cases (`login.html`, `signup.html`, `setup-profile.html`)
-*4-step profile setup wizard with live preview and graceful `InvalidInputException` error handling.*
+#### 8. 🔐 Authentication, Validation & 4-Step Profile Setup Wizard (`login.html`, `signup.html`, `setup-profile.html`)
+*Account login/registration with graceful `InvalidInputException` error handling and the 4-step post-signup profile setup wizard with live preview.*
 
+<table>
+  <tr>
+    <td width="50%"><img src="screenshot/08-auth-validation.png" alt="Authentication and Validation Error Prompt" width="100%" /></td>
+    <td width="50%"><img src="screenshot/08-auth-validation-1.png" alt="Profile Setup Wizard Step 1" width="100%" /></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="screenshot/08-auth-validation-2.png" alt="Profile Setup Wizard Step 2" width="100%" /></td>
+    <td width="50%"><img src="screenshot/08-auth-validation-3.png" alt="Profile Setup Wizard Step 3" width="100%" /></td>
+  </tr>
+</table>
 <p align="center">
-  <img src="screenshot/08-auth-validation.png" alt="QuietSpot Authentication and Validation" width="760" />
+  <img src="screenshot/08-auth-validation-4.png" alt="Profile Setup Wizard Step 4 Live Preview" width="760" />
 </p>
 
 ---
