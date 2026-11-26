@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="web/images/banner.png" alt="QuietSpot Banner" width="100%" />
+<img src="web/images/banner.jpg" alt="QuietSpot Banner" width="100%" />
 
 # QuietSpot
 ### *"Find your focus, skip the crowd."*
