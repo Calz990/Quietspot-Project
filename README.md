@@ -37,7 +37,7 @@
 - 👤 **Student Profiles & 4-Step Setup Wizard:** Post-signup onboarding wizard with live profile preview, square canvas avatar cropping, academic details, study preference tags, and profile completion strength meter.
 - 🏆 **Gamification, Streaks & Weekly Leaderboard:** Earn points for helpful contributions (`+25` new spot, `+5` status report, `+5` photo, `+3` comment, `+2` rating), level up across 6 tiers (*Newcomer* to *QuietSpot Legend*), maintain daily streaks, unlock 8 achievement badges, and compete on the weekly leaderboard.
 - 🎨 **Customizable Themes & 8 Color Palettes:** Seamless **Light/Dark mode** switch and **8 palettes** (*Black & White*, *Teal & Navy*, *Blue & Cream*, *Sage & Brown*, *Sunset Orange*, *Violet & Pink*, *Ocean Blue*, and *Rose & Teal*).
-- 💾 **Cloud-First Hybrid Persistence (TiDB Cloud + TSV Fallback):** Pre-configured to connect directly to a shared **TiDB Cloud (MySQL)** database (`Db`, `MySqlUserStore`, `MySqlSpotStore`, `SocialStore`, `GameStore`)—eliminating the need for local XAMPP/MySQL setup while keeping atomic local **TSV file storage** (`UserStore`, `SpotStore`) as an automatic offline fallback.
+- 💾 **Cloud-First Hybrid Persistence (TiDB Cloud + TSV Fallback):** Connects directly to our shared **TiDB Cloud (MySQL)** database (`Db`, `MySqlUserStore`, `MySqlSpotStore`, `SocialStore`, `GameStore`)—eliminating the need for local XAMPP/MySQL installation while keeping atomic local **TSV file storage** (`UserStore`, `SpotStore`) as an automatic offline fallback.
 
 ---
 
@@ -58,7 +58,9 @@
 ### Folder Structure
 ```text
 QuietSpot/
-├── config/                              # Shared TiDB Cloud (MySQL) connection config (db.properties)
+├── config/
+│   ├── db.properties.example            # Template for database connection credentials
+│   └── db.properties                    # Private TiDB Cloud (MySQL) credentials (gitignored)
 ├── data/                                # Fallback atomic TSV storage (users.tsv, spots.tsv)
 ├── db/                                  # Database schema script (schema.sql)
 ├── docs/                                # Setup guides & project proposal
@@ -372,7 +374,7 @@ classDiagram
 
 1. **Check Prerequisites:**
    - **Java Development Kit (JDK) 17 or higher** installed on your computer.
-   - **Active Internet Connection** (QuietSpot connects directly to our shared **TiDB Cloud** MySQL database via `config/db.properties` and `lib/mysql-connector-j`, so **no local XAMPP or MySQL installation is required**).
+   - **Active Internet Connection** (QuietSpot connects directly to our shared **TiDB Cloud** MySQL database via `lib/mysql-connector-j`, so **no local XAMPP or MySQL installation is required**).
 2. **Clone the Repository:**
    ```bash
    git clone [https://github.com/Calz990/Quietspot-Project.git](https://github.com/Calz990/Quietspot-Project.git)
@@ -380,7 +382,15 @@ classDiagram
    ```
 3. **Open in IDE (IMPORTANT):** Open the `QuietSpot` root folder directly in **Visual Studio Code** (with the *Extension Pack for Java*) or any Java IDE.
    > *Note: Open the project root folder directly so relative paths to `web/`, `config/`, and `data/` resolve properly.*
-4. **Compile & Start the Java Backend Server:**
+4. **Configure Database Connection (`config/db.properties`):**
+   - Because `config/db.properties` is gitignored for security, create a new file named `db.properties` inside the `config/` folder (using `config/db.properties.example` as a reference) and paste the team's shared **TiDB Cloud** credentials:
+```properties
+db.url=jdbc:mysql://<TIDB_HOST>:4000/quietspot?sslMode=VERIFY_IDENTITY
+db.user=<TIDB_USER>
+db.password=<TIDB_PASSWORD>
+```
+   - *(Note: If `config/db.properties` is omitted, QuietSpot automatically falls back to local TSV storage in `data/` with social/leaderboard features disabled.)*
+5. **Compile & Start the Java Backend Server:**
    - **Using VS Code:** Open `src/Main.java` and click **Run**.
    - **Using Terminal (macOS/Linux):**
 ```bash
@@ -394,14 +404,13 @@ java -cp "out;lib/*" Main
 ```
    > *Expected Console Output:*
    > ```text
-   > Saving accounts and spots to <TiDB Cloud host/database>.
+   > Saving accounts and spots to the MySQL database from DB_URL / db.url.
    > =========================================
    > QuietSpot Java Server is running!
    > Opening http://localhost:8080...
    > =========================================
    > ```
-   > *(Note: If `config/db.properties` is removed or unavailable, the server automatically falls back to local TSV storage in `data/`.)*
-5. **Launch the Web Application:** Your browser will open automatically, or visit:
+6. **Launch the Web Application:** Your browser will open automatically, or visit:
    ```text
    http://localhost:8080
    ```
@@ -431,7 +440,7 @@ java -cp "out;lib/*" Main
 *Embedded Java `HttpServer` starting on `http://localhost:8080` and connecting to the shared TiDB Cloud MySQL database.*
 
 ```text
-Saving accounts and spots to <TiDB Cloud host/database>.
+Saving accounts and spots to the MySQL database from DB_URL / db.url.
 =========================================
 QuietSpot Java Server is running!
 Opening http://localhost:8080...
