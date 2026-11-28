@@ -516,8 +516,8 @@ Opening http://localhost:8080...
 
 ---
 
-#### 8. 🔐 Authentication, Validation & 4-Step Profile Setup Wizard (`login.html`, `signup.html`, `setup-profile.html`)
-*Account login/registration with graceful `InvalidInputException` error handling and the 4-step post-signup profile setup wizard with live preview.*
+#### 8. 🔐 Authentication, 4-Step Profile Setup Wizard & Completed Account (`login.html`, `signup.html`, `setup-profile.html`, `account.html`)
+*Account login/registration with graceful `InvalidInputException` error handling, the 4-step post-signup profile setup wizard, and the completed 100% student profile view.*
 
 <table>
   <tr>
@@ -528,10 +528,11 @@ Opening http://localhost:8080...
     <td width="50%"><img src="screenshot/08-auth-validation-2.png" alt="Profile Setup Wizard Step 2" width="100%" /></td>
     <td width="50%"><img src="screenshot/08-auth-validation-3.png" alt="Profile Setup Wizard Step 3" width="100%" /></td>
   </tr>
+  <tr>
+    <td width="50%"><img src="screenshot/08-auth-validation-4.png" alt="Profile Setup Wizard Step 4 Live Preview" width="100%" /></td>
+    <td width="50%"><img src="screenshot/08-auth-validation-5.png" alt="Completed Account Profile at 100% Strength" width="100%" /></td>
+  </tr>
 </table>
-<p align="center">
-  <img src="screenshot/08-auth-validation-4.png" alt="Profile Setup Wizard Step 4 Live Preview" width="760" />
-</p>
 
 ---
 
