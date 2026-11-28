@@ -59,8 +59,7 @@
 ```text
 QuietSpot/
 ├── config/
-│   ├── db.properties.example            # Template for database connection credentials
-│   └── db.properties                    # Private TiDB Cloud (MySQL) credentials (gitignored)
+│   └── db.properties.example            # Template for database connection credentials
 ├── data/                                # Fallback atomic TSV storage (users.tsv, spots.tsv)
 ├── db/                                  # Database schema script (schema.sql)
 ├── docs/                                # Setup guides & project proposal
