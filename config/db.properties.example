@@ -13,8 +13,3 @@
 # When db.url is set, db.host / db.port / db.name are ignored and the database must already exist.
 # You can also set the environment variables DB_URL, DB_USER and DB_PASSWORD, which win over this file.
 #db.url=jdbc:mysql://HOST:4000/quietspot?sslMode=VERIFY_IDENTITY
-
-#New Hosted database
-db.url=jdbc:mysql://gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/quietspot?sslMode=VERIFY_IDENTITY
-db.user=3BbeqL3LTn9c5Re.root
-db.password=XI9D3lvGoQlJFx0N
