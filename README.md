@@ -7,7 +7,7 @@
 **Real-Time Study Area Tracker and Finder in Batangas City**
 
 ![Java](https://img.shields.io/badge/Backend-Java_17+-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)
-![MySQL](https://img.shields.io/badge/Database-MySQL_8.0_%7C_TSV-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
+![Database](https://img.shields.io/badge/Database-TiDB_Cloud_(MySQL)_%7C_TSV-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
 ![Frontend](https://img.shields.io/badge/Frontend-HTML5_%7C_CSS3_%7C_JS-3178C6?style=for-the-badge&logo=javascript&logoColor=white)
 ![Map](https://img.shields.io/badge/Map-Leaflet.js-199900?style=for-the-badge&logo=leaflet&logoColor=white)
 ![Architecture](https://img.shields.io/badge/Architecture-Object--Oriented-2EA44F?style=for-the-badge)
@@ -37,7 +37,7 @@
 - 👤 **Student Profiles & 4-Step Setup Wizard:** Post-signup onboarding wizard with live profile preview, square canvas avatar cropping, academic details, study preference tags, and profile completion strength meter.
 - 🏆 **Gamification, Streaks & Weekly Leaderboard:** Earn points for helpful contributions (`+25` new spot, `+5` status report, `+5` photo, `+3` comment, `+2` rating), level up across 6 tiers (*Newcomer* to *QuietSpot Legend*), maintain daily streaks, unlock 8 achievement badges, and compete on the weekly leaderboard.
 - 🎨 **Customizable Themes & 8 Color Palettes:** Seamless **Light/Dark mode** switch and **8 palettes** (*Black & White*, *Teal & Navy*, *Blue & Cream*, *Sage & Brown*, *Sunset Orange*, *Violet & Pink*, *Ocean Blue*, and *Rose & Teal*).
-- 💾 **Hybrid Persistence Architecture:** Automatically uses **MySQL** (`Db`, `MySqlUserStore`, `MySqlSpotStore`, `SocialStore`, `GameStore`) when configured, or falls back seamlessly to atomic local **TSV file storage** (`UserStore`, `SpotStore`) with automatic one-time migration upon MySQL setup.
+- 💾 **Cloud-First Hybrid Persistence (TiDB Cloud + TSV Fallback):** Pre-configured to connect directly to a shared **TiDB Cloud (MySQL)** database (`Db`, `MySqlUserStore`, `MySqlSpotStore`, `SocialStore`, `GameStore`)—eliminating the need for local XAMPP/MySQL setup while keeping atomic local **TSV file storage** (`UserStore`, `SpotStore`) as an automatic offline fallback.
 
 ---
 
@@ -58,7 +58,7 @@
 ### Folder Structure
 ```text
 QuietSpot/
-├── config/                              # Optional MySQL configuration (db.properties)
+├── config/                              # Shared TiDB Cloud (MySQL) connection config (db.properties)
 ├── data/                                # Fallback atomic TSV storage (users.tsv, spots.tsv)
 ├── db/                                  # Database schema script (schema.sql)
 ├── docs/                                # Setup guides & project proposal
@@ -82,8 +82,8 @@ QuietSpot/
 │   │   ├── CrowdLevel.java              # Enum (EMPTY, LOW, MEDIUM, HIGH, PACKED)
 │   │   └── UserType.java                # Enum (STUDENT, FACULTY, STAFF)
 │   └── service/
-│       ├── Db.java                      # MySQL JDBC connector & auto-schema initializer
-│       ├── Storage.java                 # Storage backend factory (MySQL vs. TSV)
+│       ├── Db.java                      # TiDB Cloud / MySQL JDBC connector & schema initializer
+│       ├── Storage.java                 # Storage backend factory (TiDB Cloud MySQL vs. TSV)
 │       ├── UserStorage.java             # Account persistence contract
 │       ├── UserStore.java               # TSV file-based account persistence
 │       ├── MySqlUserStore.java          # MySQL-based account & favorites persistence
@@ -214,7 +214,9 @@ classDiagram
             +checkPassword(String) boolean
             +toggleFavorite(int) boolean
             +addPoints(int) void
-            +recordReport() void
+            +incrementReportsMade() void
+            +incrementSpotsAdded() void
+            +incrementPhotosAdded() void
         }
 
         class UserProfile {
@@ -368,16 +370,17 @@ classDiagram
 
 ## 🚀 How to Run the Program
 
-1. **Check Prerequisites:** Ensure **Java Development Kit (JDK) 17 or higher** is installed on your computer. *(Optional: MySQL 8.0+ via XAMPP or MySQL Community Server with `mysql-connector-j` in `lib/` for full social, photo, streak, and leaderboard features.)*
+1. **Check Prerequisites:**
+   - **Java Development Kit (JDK) 17 or higher** installed on your computer.
+   - **Active Internet Connection** (QuietSpot connects directly to our shared **TiDB Cloud** MySQL database via `config/db.properties` and `lib/mysql-connector-j`, so **no local XAMPP or MySQL installation is required**).
 2. **Clone the Repository:**
    ```bash
-   git clone https://github.com/Calz990/Quietspot-Project.git
+   git clone [https://github.com/Calz990/Quietspot-Project.git](https://github.com/Calz990/Quietspot-Project.git)
    cd Quietspot-Project
    ```
 3. **Open in IDE (IMPORTANT):** Open the `QuietSpot` root folder directly in **Visual Studio Code** (with the *Extension Pack for Java*) or any Java IDE.
    > *Note: Open the project root folder directly so relative paths to `web/`, `config/`, and `data/` resolve properly.*
-4. *(Optional)* **Configure MySQL:** Copy `config/db.properties.example` to `config/db.properties` and set your database credentials (`db.host`, `db.port`, `db.name`, `db.user`, `db.password`). Tables are created automatically on startup; if skipped, QuietSpot runs seamlessly using local TSV files in `data/`.
-5. **Compile & Start the Java Backend Server:**
+4. **Compile & Start the Java Backend Server:**
    - **Using VS Code:** Open `src/Main.java` and click **Run**.
    - **Using Terminal (macOS/Linux):**
 ```bash
@@ -389,8 +392,16 @@ java -cp "out:lib/*" Main
 javac -cp "lib/*" -d out src/exception/*.java src/model/*.java src/service/*.java src/Main.java
 java -cp "out;lib/*" Main
 ```
-   > *Expected Console Output:* `QuietSpot Java Server is running! Opening http://localhost:8080...`
-6. **Launch the Web Application:** Your browser will open automatically, or visit:
+   > *Expected Console Output:*
+   > ```text
+   > Saving accounts and spots to <TiDB Cloud host/database>.
+   > =========================================
+   > QuietSpot Java Server is running!
+   > Opening http://localhost:8080...
+   > =========================================
+   > ```
+   > *(Note: If `config/db.properties` is removed or unavailable, the server automatically falls back to local TSV storage in `data/`.)*
+5. **Launch the Web Application:** Your browser will open automatically, or visit:
    ```text
    http://localhost:8080
    ```
@@ -417,9 +428,10 @@ java -cp "out;lib/*" Main
 ### 🖼️ Visual Walkthrough & Output Captures
 
 #### 1. 🖥️ Backend Server Startup & Console Output
-*Embedded Java `HttpServer` starting on `http://localhost:8080` and initializing database persistence.*
+*Embedded Java `HttpServer` starting on `http://localhost:8080` and connecting to the shared TiDB Cloud MySQL database.*
 
 ```text
+Saving accounts and spots to <TiDB Cloud host/database>.
 =========================================
 QuietSpot Java Server is running!
 Opening http://localhost:8080...
